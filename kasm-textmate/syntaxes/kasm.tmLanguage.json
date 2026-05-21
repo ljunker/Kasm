@@ -48,7 +48,7 @@
       "patterns": [
         {
           "name": "keyword.instruction.kasm",
-          "match": "\\b(?i:MOV|ADD|SUB|JMP|JZ|PRINT|HALT)\\b"
+          "match": "\\b(?i:MOV|ADD|SUB|INC|DEC|CMP|JMP|JZ|JNZ|JE|JNE|JG|JL|LOAD|STORE|PUSH|POP|CALL|RET|PRINT|HALT)\\b"
         }
       ]
     },

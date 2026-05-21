@@ -2,13 +2,19 @@ package de.ljunker.kasm
 
 class Assembler {
 
-    fun assemble(source: String): Program {
+    fun assemble(source: String): Program =
+        assembleWithDebugInfo(source).program
+
+    fun assembleWithDebugInfo(source: String): DebugProgram {
         val statements = parseStatements(source)
 
         val labels = collectLabels(statements)
-        val bytes = encode(statements, labels)
+        val encoding = encode(statements, labels)
 
-        return Program(bytes)
+        return DebugProgram(
+            program = Program(encoding.bytes),
+            sourceMap = SourceMap(encoding.sourceLocations)
+        )
     }
 
     private fun parseStatements(source: String): List<Statement> {
@@ -82,10 +88,7 @@ class Assembler {
                 }
 
                 is Statement.Instruction -> {
-                    val opcode = Opcode.fromMnemonic(statement.mnemonic)
-                        ?: throw AssemblyException(
-                            "Line ${statement.lineNumber}: unknown instruction '${statement.mnemonic}'"
-                        )
+                    val opcode = resolveOpcode(statement)
 
                     ensureArgumentCount(statement, opcode)
 
@@ -112,21 +115,23 @@ class Assembler {
     private fun encode(
         statements: List<Statement>,
         labels: Map<String, Int>
-    ): List<Int> {
+    ): Encoding {
         val bytes = mutableListOf<Int>()
+        val sourceLocations = mutableMapOf<Int, SourceLocation>()
 
         for (statement in statements) {
             if (statement !is Statement.Instruction) {
                 continue
             }
 
-            val opcode = Opcode.fromMnemonic(statement.mnemonic)
-                ?: throw AssemblyException(
-                    "Line ${statement.lineNumber}: unknown instruction '${statement.mnemonic}'"
-                )
+            val opcode = resolveOpcode(statement)
 
             ensureArgumentCount(statement, opcode)
 
+            sourceLocations[bytes.size] = SourceLocation(
+                lineNumber = statement.lineNumber,
+                source = statement.original
+            )
             bytes += opcode.code
 
             when (opcode) {
@@ -135,32 +140,100 @@ class Assembler {
                     bytes += parseValueOrLabel(statement.arguments[1], labels, statement.lineNumber)
                 }
 
-                Opcode.ADD,
-                Opcode.SUB -> {
+                Opcode.MOV_REGISTER -> {
                     bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                     bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+                }
+
+                Opcode.ADD,
+                Opcode.SUB,
+                Opcode.CMP -> {
+                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                    bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+                }
+
+                Opcode.INC,
+                Opcode.DEC -> {
+                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 }
 
                 Opcode.JMP -> {
                     bytes += parseValueOrLabel(statement.arguments[0], labels, statement.lineNumber)
                 }
 
-                Opcode.JZ -> {
+                Opcode.JZ,
+                Opcode.JNZ -> {
                     bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                     bytes += parseValueOrLabel(statement.arguments[1], labels, statement.lineNumber)
+                }
+
+                Opcode.JE,
+                Opcode.JNE,
+                Opcode.JG,
+                Opcode.JL,
+                Opcode.CALL -> {
+                    bytes += parseValueOrLabel(statement.arguments[0], labels, statement.lineNumber)
+                }
+
+                Opcode.LOAD -> {
+                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                    bytes += parseMemoryAddress(statement.arguments[1], labels, statement.lineNumber)
+                }
+
+                Opcode.STORE -> {
+                    bytes += parseMemoryAddress(statement.arguments[0], labels, statement.lineNumber)
+                    bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+                }
+
+                Opcode.PUSH,
+                Opcode.POP -> {
+                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 }
 
                 Opcode.PRINT -> {
                     bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 }
 
+                Opcode.RET,
                 Opcode.HALT -> {
                     // no operands
                 }
             }
         }
 
-        return bytes
+        return Encoding(
+            bytes = bytes,
+            sourceLocations = sourceLocations
+        )
+    }
+
+    private fun resolveOpcode(statement: Statement.Instruction): Opcode {
+        val opcode = Opcode.fromMnemonic(statement.mnemonic)
+            ?: throw AssemblyException(
+                "Line ${statement.lineNumber}: unknown instruction '${statement.mnemonic}'"
+            )
+
+        if (opcode == Opcode.MOV && statement.arguments.getOrNull(1)?.let(::isRegister) == true) {
+            return Opcode.MOV_REGISTER
+        }
+
+        return opcode
+    }
+
+    private fun isRegister(value: String): Boolean =
+        REGISTER_REGEX.matchEntire(value.uppercase()) != null
+
+    private fun parseMemoryAddress(
+        value: String,
+        labels: Map<String, Int>,
+        lineNumber: Int
+    ): Int {
+        val match = MEMORY_ADDRESS_REGEX.matchEntire(value.trim())
+            ?: throw AssemblyException(
+                "Line $lineNumber: memory address '$value' must use [value]"
+            )
+
+        return parseValueOrLabel(match.groupValues[1].trim(), labels, lineNumber)
     }
 
     private fun parseRegister(value: String, lineNumber: Int): Int {
@@ -233,12 +306,20 @@ class Assembler {
         ) : Statement
     }
 
+    private data class Encoding(
+        val bytes: List<Int>,
+        val sourceLocations: Map<Int, SourceLocation>
+    )
+
     companion object {
         private val LABEL_REGEX =
             Regex("""^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$""")
 
         private val REGISTER_REGEX =
             Regex("""^R([0-9]+)$""")
+
+        private val MEMORY_ADDRESS_REGEX =
+            Regex("""^\[(.+)]$""")
 
         private const val REGISTER_COUNT = 4
     }

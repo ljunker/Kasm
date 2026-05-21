@@ -8,6 +8,7 @@ version = "0.1.0"
 
 application {
     mainClass.set("de.ljunker.kasm.MainKt")
+    applicationName = "kasm"
 }
 
 kotlin {
@@ -20,4 +21,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.named<JavaExec>("run") {
+    standardInput = System.`in`
 }
