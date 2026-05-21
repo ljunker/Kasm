@@ -93,31 +93,37 @@ gilt:
 - `kasm run examples/countdown.kasm`
 - `kasm debug examples/stack-calls.kasm`
 
+### Absicherung und Referenz
+
+Die aktuelle Basis ist durch normale Unit Tests und Golden Tests abgesichert:
+
+- Assembler-Fehler fuer ungueltige Memory-Operands sowie fehlende und zu viele
+  Operanden sind abgedeckt.
+- VM-Fehler fuer Stack Underflow, Stack Overflow und ungueltige Jump- oder
+  Call-Ziele sind abgedeckt.
+- Die Beispielprogramme haben stabile Hexdump- und Ausgabe-Erwartungen.
+- `docs/language-reference.md` beschreibt Instruktionen, Operandentypen, Flags,
+  Memory und Stack.
+
+Die Opcode-Tabelle kennt Operandentypen statt nur Argumentzahlen. Das ist der
+erste Schritt, damit Assembler, Diagnostik und spaeter Editor-Tooling auf
+gemeinsame Instruktionsmetadaten aufbauen koennen.
+
 ## Empfohlene Umsetzungsreihenfolge
 
-### 1. Bestehende Basis absichern
+### Abgeschlossen: Bestehende Basis absichern
 
-Der aktuelle Instruktionssatz ist gross genug, dass Regressionen schnell teuer
-werden. Der naechste kleine Schritt sollte deshalb nicht sofort noch mehr Syntax
-sein, sondern bessere Absicherung und Dokumentation.
+Der erste Absicherungsblock ist umgesetzt:
 
-- Tests fuer Fehlerfaelle ausbauen:
-  - Stack Underflow und Overflow
-  - ungueltige Memory-Operands
-  - ungueltige Jump- und Call-Ziele
-  - fehlende oder zu viele Operanden
-- Golden Tests fuer Beispielprogramme einfuehren:
-  - erwarteter Hexdump
-  - erwartete Programmausgabe
-- Eine kurze Sprachreferenz schreiben:
-  - Instruktionsliste
-  - Operandentypen
-  - Flag-Semantik
-  - Stack- und Memory-Modell
-- Opcode-Metadaten mittelfristig zentraler machen, damit Assembler,
-  VM-Diagnostik und Editor-Tooling nicht bei jeder Instruktion auseinanderlaufen.
+- Fehlerfalltests decken den aktuellen Assembler- und VM-Rand besser ab.
+- Golden Tests bewachen Bytecode und Ausgabe der Beispiele.
+- Die Sprachreferenz haelt den aktuellen Maschinenstand fest.
+- Operandentypen liegen in der Opcode-Metadatenstruktur.
 
-### 2. Architektursemantik festziehen
+Neue Features sollten diese Tests und die Referenz jeweils erweitern, statt die
+Absicherung spaeter nachzuholen.
+
+### 1. Architektursemantik festziehen
 
 Memory, Stack und Flags machen KASM jetzt zu einer kleinen Maschine und nicht
 mehr nur zu einem Assembler-Spielzeug. Deshalb sollten die Maschinenregeln
@@ -143,7 +149,7 @@ frueh explizit werden.
 Diese Entscheidungen beeinflussen spaeter `MUL`, `DIV`, weitere Spruenge,
 Assembler-Direktiven, Debugger und Disassembler.
 
-### 3. Memory im Assembler wirklich nutzbar machen
+### 2. Memory im Assembler wirklich nutzbar machen
 
 Direkte Adressen wie `[40]` reichen fuer erste Beispiele. Fuer laengere Programme
 braucht Memory aber Namen, Datenbereiche und kleine Ausdruecke.
@@ -168,7 +174,7 @@ braucht Memory aber Namen, Datenbereiche und kleine Ausdruecke.
 Danach werden `LOAD` und `STORE` deutlich lesbarer als Programme mit vielen
 hart kodierten Adressen.
 
-### 4. Instruktionssatz gezielt erweitern
+### 3. Instruktionssatz gezielt erweitern
 
 Neue Opcodes sollten dann zuerst Programme kuerzer oder klarer machen, die mit
 dem aktuellen Kern bereits moeglich sind.
@@ -198,7 +204,7 @@ dem aktuellen Kern bereits moeglich sind.
 Bei `DIV`, Wraparound und Carry/Overflow sollte die Architekturentscheidung aus
 Phase 2 vorher stehen.
 
-### 5. Direkten CLI-Workflow ausbauen
+### 4. Direkten CLI-Workflow ausbauen
 
 Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
 werden, sollte zuerst der normale Aufruf ohne Gradle sauber werden und danach
@@ -242,7 +248,7 @@ das Bytecode- und Debugger-Tooling folgen.
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
   - spaeter optional im Bytecode-Format persistieren
 
-### 6. Parser und Diagnostik verbessern
+### 5. Parser und Diagnostik verbessern
 
 Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Direktiven,
 Ausdruecke, Strings und Makros werden mit strukturierterem Parsing deutlich
@@ -257,7 +263,7 @@ leichter.
   - erwarteter Operandentyp
 - Mehrere Fehler in einem Assembler-Lauf sammeln, wo das sinnvoll ist.
 
-### 7. Editor- und Sprachtooling nachziehen
+### 6. Editor- und Sprachtooling nachziehen
 
 Das TextMate-Highlighting ist ein guter Anfang. Sobald Syntax und Semantik
 stabiler sind, lohnt sich reichhaltigeres Tooling.
@@ -268,7 +274,7 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 - Completion und Hover-Dokumentation.
 - Spaeter Diagnostics oder ein kleiner Language Server.
 
-### 8. Groessere Sprachideen spaeter
+### 7. Groessere Sprachideen spaeter
 
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 

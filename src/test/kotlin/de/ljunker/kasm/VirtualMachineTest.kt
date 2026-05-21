@@ -2,6 +2,7 @@ package de.ljunker.kasm
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class VirtualMachineTest {
 
@@ -105,5 +106,64 @@ class VirtualMachineTest {
         VirtualMachine { line -> output += line }.run(program)
 
         assertEquals(listOf("10", "5"), output)
+    }
+
+    @Test
+    fun rejectsStackUnderflow() {
+        val exception = assertFailsWith<VmException> {
+            VirtualMachine().run(
+                Program.of(
+                    Opcode.POP.code, 0,
+                    Opcode.HALT.code
+                )
+            )
+        }
+
+        assertEquals("Stack underflow", exception.message)
+    }
+
+    @Test
+    fun rejectsStackOverflow() {
+        val bytes = buildList {
+            repeat(257) {
+                add(Opcode.PUSH.code)
+                add(0)
+            }
+            add(Opcode.HALT.code)
+        }
+
+        val exception = assertFailsWith<VmException> {
+            VirtualMachine().run(Program(bytes))
+        }
+
+        assertEquals("Stack overflow", exception.message)
+    }
+
+    @Test
+    fun rejectsOutOfBoundsJumpTargets() {
+        val exception = assertFailsWith<VmException> {
+            VirtualMachine().run(
+                Program.of(
+                    Opcode.JMP.code, 42,
+                    Opcode.HALT.code
+                )
+            )
+        }
+
+        assertEquals("Jump target out of bounds: 42", exception.message)
+    }
+
+    @Test
+    fun rejectsOutOfBoundsCallTargets() {
+        val exception = assertFailsWith<VmException> {
+            VirtualMachine().run(
+                Program.of(
+                    Opcode.CALL.code, 42,
+                    Opcode.HALT.code
+                )
+            )
+        }
+
+        assertEquals("Jump target out of bounds: 42", exception.message)
     }
 }

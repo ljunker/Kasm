@@ -88,6 +88,36 @@ class AssemblerTest {
     }
 
     @Test
+    fun rejectsOutOfRangeMemoryAddresses() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble("STORE [300], R0")
+        }
+
+        assertEquals(
+            "Line 1: value '300' resolves to 300, but only 0..255 is allowed",
+            exception.message
+        )
+    }
+
+    @Test
+    fun rejectsMissingOperands() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble("ADD R0")
+        }
+
+        assertEquals("Line 1: ADD expects 2 argument(s), got 1", exception.message)
+    }
+
+    @Test
+    fun rejectsExtraOperands() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble("HALT R0")
+        }
+
+        assertEquals("Line 1: HALT expects 0 argument(s), got 1", exception.message)
+    }
+
+    @Test
     fun mapsExecutableLinesToBytecodeAddresses() {
         val debugProgram = Assembler().assembleWithDebugInfo(
             """

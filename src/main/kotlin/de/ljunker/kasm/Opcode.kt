@@ -3,30 +3,35 @@ package de.ljunker.kasm
 enum class Opcode(
     val code: Int,
     val mnemonic: String,
-    val operandCount: Int
+    vararg operandTypes: OperandType
 ) {
-    MOV(0x01, "MOV", 2),    // MOV R0, 10
-    ADD(0x02, "ADD", 2),    // ADD R0, R1
-    SUB(0x03, "SUB", 2),    // SUB R0, R1
-    JMP(0x04, "JMP", 1),    // JMP label
-    JZ(0x05, "JZ", 2),      // JZ R0, label
-    PRINT(0x06, "PRINT", 1),// PRINT R0
-    MOV_REGISTER(0x07, "MOV", 2), // MOV R0, R1
-    JNZ(0x08, "JNZ", 2),    // JNZ R0, label
-    INC(0x09, "INC", 1),    // INC R0
-    DEC(0x0A, "DEC", 1),    // DEC R0
-    CMP(0x0B, "CMP", 2),    // CMP R0, R1
-    JE(0x0C, "JE", 1),      // JE label
-    JNE(0x0D, "JNE", 1),    // JNE label
-    JG(0x0E, "JG", 1),      // JG label
-    JL(0x0F, "JL", 1),      // JL label
-    LOAD(0x10, "LOAD", 2),  // LOAD R0, [10]
-    STORE(0x11, "STORE", 2),// STORE [10], R0
-    PUSH(0x12, "PUSH", 1),  // PUSH R0
-    POP(0x13, "POP", 1),    // POP R0
-    CALL(0x14, "CALL", 1),  // CALL label
-    RET(0x15, "RET", 0),    // RET
-    HALT(0xFF, "HALT", 0);  // HALT
+    MOV(0x01, "MOV", OperandType.REGISTER, OperandType.BYTE_VALUE),
+    ADD(0x02, "ADD", OperandType.REGISTER, OperandType.REGISTER),
+    SUB(0x03, "SUB", OperandType.REGISTER, OperandType.REGISTER),
+    JMP(0x04, "JMP", OperandType.JUMP_TARGET),
+    JZ(0x05, "JZ", OperandType.REGISTER, OperandType.JUMP_TARGET),
+    PRINT(0x06, "PRINT", OperandType.REGISTER),
+    MOV_REGISTER(0x07, "MOV", OperandType.REGISTER, OperandType.REGISTER),
+    JNZ(0x08, "JNZ", OperandType.REGISTER, OperandType.JUMP_TARGET),
+    INC(0x09, "INC", OperandType.REGISTER),
+    DEC(0x0A, "DEC", OperandType.REGISTER),
+    CMP(0x0B, "CMP", OperandType.REGISTER, OperandType.REGISTER),
+    JE(0x0C, "JE", OperandType.JUMP_TARGET),
+    JNE(0x0D, "JNE", OperandType.JUMP_TARGET),
+    JG(0x0E, "JG", OperandType.JUMP_TARGET),
+    JL(0x0F, "JL", OperandType.JUMP_TARGET),
+    LOAD(0x10, "LOAD", OperandType.REGISTER, OperandType.MEMORY_ADDRESS),
+    STORE(0x11, "STORE", OperandType.MEMORY_ADDRESS, OperandType.REGISTER),
+    PUSH(0x12, "PUSH", OperandType.REGISTER),
+    POP(0x13, "POP", OperandType.REGISTER),
+    CALL(0x14, "CALL", OperandType.JUMP_TARGET),
+    RET(0x15, "RET"),
+    HALT(0xFF, "HALT");
+
+    val operandTypes: List<OperandType> = operandTypes.toList()
+
+    val operandCount: Int
+        get() = operandTypes.size
 
     companion object {
         private val byMnemonic = entries
@@ -40,4 +45,11 @@ enum class Opcode(
         fun fromCode(value: Int): Opcode? =
             byCode[value]
     }
+}
+
+enum class OperandType {
+    REGISTER,
+    BYTE_VALUE,
+    JUMP_TARGET,
+    MEMORY_ADDRESS
 }
