@@ -74,6 +74,7 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
 
 Die CLI kann Quellprogramme direkt ausfuehren und interaktiv debuggen:
 
+- `kasm run program.kasm` assembliert und startet ein Programm.
 - `kasm program.kasm` assembliert und startet ein Programm.
 - `kasm debug program.kasm` startet den Debugger auf der Quelldatei.
 - `br 5` setzt im Debugger einen Breakpoint auf eine ausfuehrbare Quellzeile.
@@ -86,9 +87,10 @@ Bytecode-Adressen. Breakpoints auf reinen Label-, Leer- oder Kommentarzeilen
 werden aktuell abgelehnt.
 
 Der Entwicklungsstart ueber `./gradlew run` ist fuer Tests und Repo-Arbeit
-praktisch, soll aber nicht der normale Nutzerweg bleiben. Die CLI sollte als
-direktes Kommando installierbar werden, damit spaeter zum Beispiel diese Form
-gilt:
+praktisch, soll aber nicht der normale Nutzerweg bleiben. `installDist` erzeugt
+eine lokale `kasm`-Distribution mit Startskript und Runtime-Libs. Fuer einen
+Aufruf von ueberall soll die ganze Distribution an einem stabilen Ort liegen
+und nur `bin/kasm` ueber den `PATH` sichtbar gemacht werden:
 
 - `kasm run examples/countdown.kasm`
 - `kasm debug examples/stack-calls.kasm`
@@ -210,14 +212,12 @@ Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
 werden, sollte zuerst der normale Aufruf ohne Gradle sauber werden und danach
 das Bytecode- und Debugger-Tooling folgen.
 
-- Gradle-Distribution als Nutzerpfad vorbereiten:
-  - `applicationName` explizit auf `kasm` setzen
-  - lokales Startskript ueber `installDist` erzeugen
-  - dokumentieren, wie das `bin`-Verzeichnis in den `PATH` kommt
-- CLI-Aufrufe explizit machen:
-  - `kasm run file.kasm`
-  - `kasm debug file.kasm`
-  - bisheriges `kasm file.kasm` optional als Kurzform behalten
+- Gradle-Distribution und explizite CLI-Aufrufe sind vorbereitet:
+  - `applicationName` ist `kasm`
+  - `installDist` erzeugt Startskript und Runtime-Libs
+  - `README.md` dokumentiert Distribution-Install und `PATH`
+  - `kasm run file.kasm` und `kasm debug file.kasm` sind die expliziten Aufrufe
+  - `kasm file.kasm` bleibt als Kurzform erhalten
 - Usage- und Fehlerausgaben fuer Subcommands schaerfen:
   - fehlende Datei
   - unbekanntes Subcommand

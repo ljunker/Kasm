@@ -6,6 +6,8 @@ import kotlin.io.path.readText
 fun main(args: Array<String>) {
     when {
         args.size == 1 -> runFile(Path.of(args[0]))
+        args.size == 2 && args[0].equals("run", ignoreCase = true) ->
+            runFile(Path.of(args[1]))
         args.size == 2 && args[0].equals("debug", ignoreCase = true) ->
             debugFile(Path.of(args[1]))
 
@@ -42,6 +44,7 @@ private fun debugFile(sourcePath: Path) {
 
 private fun printUsage() {
     println("Usage:")
+    println("  kasm run <file.kasm>")
     println("  kasm <file.kasm>")
     println("  kasm debug <file.kasm>")
 }

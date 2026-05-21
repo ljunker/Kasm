@@ -51,8 +51,8 @@ class ExampleProgramGoldenTest {
             ),
             Example(
                 fileName = "memory-swap.kasm",
-                hexDump = "01 00 04 01 01 09 11 28 00 11 29 01 10 02 28 10 03 29 " +
-                        "11 28 03 11 29 02 10 00 28 06 00 10 00 29 06 00 FF",
+                hexDump = "01 00 04 01 01 09 11 28 00 11 29 01 14 11 14 1E FF 10 02 28 " +
+                        "10 03 29 11 28 03 11 29 02 15 10 00 28 06 00 10 00 29 06 00 15",
                 output = listOf("9", "4")
             ),
             Example(

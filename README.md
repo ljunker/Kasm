@@ -17,12 +17,10 @@ and a stack for function calls.
 
 ## Quick Start
 
-KASM currently runs from the Gradle application entrypoint.
-
-Run the countdown example:
+Run the countdown example during development:
 
 ```sh
-./gradlew run --args=examples/countdown.kasm
+./gradlew run --args='run examples/countdown.kasm'
 ```
 
 Run the test suite:
@@ -174,12 +172,51 @@ double:
 The stack lives in data memory and grows downward from the high end of the
 256-cell memory space.
 
+## Install The CLI
+
+The Gradle application distribution is the runnable KASM installation. Its
+generated launcher needs the sibling `lib` directory from the same distribution,
+so do not copy only the `bin/kasm` script into another directory.
+
+Build the local distribution:
+
+```sh
+./gradlew installDist
+```
+
+Install that distribution into a stable location and expose only a symlink from
+your personal `bin` directory:
+
+```sh
+mkdir -p "$HOME/opt"
+rsync -a --delete build/install/kasm/ "$HOME/opt/kasm/"
+mkdir -p "$HOME/bin"
+ln -sfn "$HOME/opt/kasm/bin/kasm" "$HOME/bin/kasm"
+```
+
+Ensure `~/bin` is on your shell `PATH`. For zsh, put this in `~/.zshrc` if it is
+not already there:
+
+```sh
+export PATH="$HOME/bin:$PATH"
+```
+
+After opening a new shell or reloading the shell config, KASM can run source
+files from any working directory:
+
+```sh
+kasm run /path/to/program.kasm
+kasm debug /path/to/program.kasm
+```
+
+`kasm /path/to/program.kasm` is kept as a short form of `kasm run`.
+
 ## Debugger
 
 Start the source debugger with the `debug` CLI mode:
 
 ```sh
-./gradlew run --args='debug examples/stack-calls.kasm'
+kasm debug examples/stack-calls.kasm
 ```
 
 Useful debugger commands:
@@ -210,7 +247,7 @@ and non-zero memory cells outside the active stack.
 Run any example by passing its source path to the CLI:
 
 ```sh
-./gradlew run --args=examples/memory-swap.kasm
+kasm run examples/memory-swap.kasm
 ```
 
 ## Project Layout
@@ -222,4 +259,3 @@ Run any example by passing its source path to the CLI:
 | `examples`                        | KASM source programs.                                      |
 | `docs/language-reference.md`      | Current language and VM reference.                         |
 | `kasm-textmate`                   | TextMate grammar for `.kasm` files.                        |
-
