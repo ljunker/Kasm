@@ -1,0 +1,30 @@
+{
+  "name": "kasm-language",
+  "displayName": "KASM Language",
+  "version": "0.1.0",
+  "publisher": "ljunker",
+  "engines": {
+    "vscode": "*"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "kasm",
+        "aliases": [
+          "KASM",
+          "kasm"
+        ],
+        "extensions": [
+          ".kasm"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kasm",
+        "scopeName": "source.kasm",
+        "path": "./syntaxes/kasm.tmLanguage.json"
+      }
+    ]
+  }
+}

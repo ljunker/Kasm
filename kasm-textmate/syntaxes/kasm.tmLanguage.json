@@ -1,0 +1,80 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "KASM",
+  "scopeName": "source.kasm",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#labels"
+    },
+    {
+      "include": "#instructions"
+    },
+    {
+      "include": "#registers"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.semicolon.kasm",
+          "match": ";.*$"
+        }
+      ]
+    },
+    "labels": {
+      "patterns": [
+        {
+          "name": "entity.name.label.kasm",
+          "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)(:)",
+          "captures": {
+            "1": {
+              "name": "entity.name.label.kasm"
+            },
+            "2": {
+              "name": "punctuation.separator.label.kasm"
+            }
+          }
+        }
+      ]
+    },
+    "instructions": {
+      "patterns": [
+        {
+          "name": "keyword.instruction.kasm",
+          "match": "\\b(?i:MOV|ADD|SUB|JMP|JZ|PRINT|HALT)\\b"
+        }
+      ]
+    },
+    "registers": {
+      "patterns": [
+        {
+          "name": "variable.language.register.kasm",
+          "match": "\\b(?i:R[0-3])\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.kasm",
+          "match": "\\b0x[0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.kasm",
+          "match": "\\b0b[01]+\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.kasm",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    }
+  }
+}

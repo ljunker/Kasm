@@ -1,0 +1,11 @@
+MOV R0, 5
+MOV R1, 1
+
+loop:
+PRINT R0
+SUB R0, R1
+JZ R0, end
+JMP loop
+
+end:
+HALT
