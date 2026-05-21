@@ -5,16 +5,18 @@
   STORE [41], R1
   CALL swap
   CALL print
+  HALT
 
 swap:
   LOAD R2, [40]
   LOAD R3, [41]
   STORE [40], R3
   STORE [41], R2
+  RET
 
 print:
   LOAD R0, [40]
   PRINT R0
   LOAD R0, [41]
   PRINT R0
-  HALT
+  RET
