@@ -1,20 +1,20 @@
 ; Print triple(6) with nested CALL/RET and saved registers.
-MOV R0, 6
-CALL triple
-PRINT R0
-HALT
+  MOV R0, 6
+  CALL triple
+  PRINT R0
+  HALT
 
 triple:
-PUSH R1
-MOV R1, R0
-CALL double
-ADD R0, R1
-POP R1
-RET
+  PUSH R1
+  MOV R1, R0
+  CALL double
+  ADD R0, R1
+  POP R1
+  RET
 
 double:
-PUSH R1
-MOV R1, R0
-ADD R0, R1
-POP R1
-RET
+  PUSH R1
+  MOV R1, R0
+  ADD R0, R1
+  POP R1
+  RET

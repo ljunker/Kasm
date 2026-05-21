@@ -1,7 +1,7 @@
-MOV R0, 5
+  MOV R0, 5
 
 loop:
-PRINT R0
-DEC R0
-JNZ R0, loop
-HALT
+  PRINT R0
+  DEC R0
+  JNZ R0, loop
+  HALT

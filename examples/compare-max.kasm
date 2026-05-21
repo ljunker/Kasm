@@ -1,16 +1,16 @@
 ; Print the larger value with CMP and flag-based jumps.
-MOV R0, 21
-MOV R1, 13
+  MOV R0, 21
+  MOV R1, 13
 
-CMP R0, R1
-JG use_left
+  CMP R0, R1
+  JG use_left
 
-MOV R2, R1
-JMP print_result
+  MOV R2, R1
+  JMP print_result
 
 use_left:
-MOV R2, R0
+  MOV R2, R0
 
 print_result:
-PRINT R2
-HALT
+  PRINT R2
+  HALT

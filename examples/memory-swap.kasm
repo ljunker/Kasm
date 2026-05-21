@@ -1,16 +1,20 @@
 ; Store two values in memory, swap them, then print both cells.
-MOV R0, 4
-MOV R1, 9
-STORE [40], R0
-STORE [41], R1
+  MOV R0, 4
+  MOV R1, 9
+  STORE [40], R0
+  STORE [41], R1
+  CALL swap
+  CALL print
 
-LOAD R2, [40]
-LOAD R3, [41]
-STORE [40], R3
-STORE [41], R2
+swap:
+  LOAD R2, [40]
+  LOAD R3, [41]
+  STORE [40], R3
+  STORE [41], R2
 
-LOAD R0, [40]
-PRINT R0
-LOAD R0, [41]
-PRINT R0
-HALT
+print:
+  LOAD R0, [40]
+  PRINT R0
+  LOAD R0, [41]
+  PRINT R0
+  HALT
