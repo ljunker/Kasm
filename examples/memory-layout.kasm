@@ -1,0 +1,25 @@
+; Copy named cells between data regions and print the copy sum and distance.
+  .equ INPUT_BASE, 80
+  .equ OUTPUT_BASE, INPUT_BASE + 16
+
+  .org INPUT_BASE
+source:
+  .byte 7, 11
+
+  .org OUTPUT_BASE
+copy:
+  .byte 0, 0
+
+  LOAD R0, [source]
+  STORE [copy], R0
+  LOAD R0, [source + 1]
+  STORE [copy + 1], R0
+
+  LOAD R1, [copy]
+  LOAD R2, [copy + 1]
+  ADD R1, R2
+  PRINT R1
+
+  MOV R0, copy - source
+  PRINT R0
+  HALT

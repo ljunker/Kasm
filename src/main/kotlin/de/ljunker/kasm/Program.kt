@@ -1,7 +1,8 @@
 package de.ljunker.kasm
 
 data class Program(
-    val bytes: List<Int>
+    val bytes: List<Int>,
+    val initialMemory: Map<Int, Int> = emptyMap()
 ) {
     init {
         require(bytes.all { it in Architecture.wordRange }) {
@@ -9,6 +10,12 @@ data class Program(
         }
         require(bytes.size <= Architecture.ADDRESS_SPACE_SIZE) {
             "Program size must not exceed ${Architecture.ADDRESS_SPACE_SIZE} bytes"
+        }
+        require(initialMemory.keys.all { it in 0 until Architecture.MEMORY_SIZE }) {
+            "Initial memory addresses must be in range 0 until ${Architecture.MEMORY_SIZE}"
+        }
+        require(initialMemory.values.all { it in Architecture.wordRange }) {
+            "Initial memory values must be in range ${Architecture.wordRange}"
         }
     }
 

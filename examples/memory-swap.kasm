@@ -1,8 +1,10 @@
-; Store two values in memory, swap them, then print both cells.
-  MOV R0, 4
-  MOV R1, 9
-  STORE [40], R0
-  STORE [41], R1
+; Initialize two named cells, swap them, then print both values.
+  .org 40
+left:
+  .byte 4
+right:
+  .byte 9
+
   CALL swap
   CALL print
   HALT
@@ -10,17 +12,17 @@
 swap:
   PUSH R2
   PUSH R3
-  LOAD R2, [40]
-  LOAD R3, [41]
-  STORE [40], R3
-  STORE [41], R2
+  LOAD R2, [left]
+  LOAD R3, [right]
+  STORE [left], R3
+  STORE [right], R2
   POP R3
   POP R2
   RET
 
 print:
-  LOAD R0, [40]
+  LOAD R0, [left]
   PRINT R0
-  LOAD R0, [41]
+  LOAD R0, [right]
   PRINT R0
   RET

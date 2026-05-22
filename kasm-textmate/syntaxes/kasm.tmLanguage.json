@@ -4,6 +4,9 @@
   "scopeName": "source.kasm",
   "patterns": [
     {
+      "include": "#strings"
+    },
+    {
       "include": "#comments"
     },
     {
@@ -13,6 +16,9 @@
       "include": "#instructions"
     },
     {
+      "include": "#directives"
+    },
+    {
       "include": "#registers"
     },
     {
@@ -20,6 +26,17 @@
     }
   ],
   "repository": {
+    "strings": {
+      "name": "string.quoted.double.kasm",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.kasm",
+          "match": "\\\\(?:[0nrt\"\\\\])"
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {
@@ -49,6 +66,14 @@
         {
           "name": "keyword.instruction.kasm",
           "match": "\\b(?i:MOV|ADD|SUB|INC|DEC|CMP|JMP|JZ|JNZ|JE|JNE|JG|JL|LOAD|STORE|PUSH|POP|CALL|RET|PRINT|HALT)\\b"
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "keyword.directive.kasm",
+          "match": "(?i:\\.EQU|\\.ORG|\\.BYTE|\\.ASCII|\\.STRING)\\b"
         }
       ]
     },

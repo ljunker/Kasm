@@ -12,6 +12,10 @@ Die Sprache kennt aktuell:
 
 - Labels und `;`-Kommentare.
 - Dezimale, hexadezimale und binaere Zahlenliterale.
+- Konstanten, Datenlayout und kleine Ausdruecke:
+  - `.equ`, `.org`, `.byte`, `.ascii`, `.string`
+  - `end - start`
+  - `[buffer + 1]`
 - Vier allgemeine Register: `R0` bis `R3`.
 - Register- und Immediate-Moves:
   - `MOV R0, 10`
@@ -34,6 +38,7 @@ Die Sprache kennt aktuell:
 - Direkten Daten-Memory-Zugriff:
   - `LOAD R0, [40]`
   - `STORE [40], R0`
+  - `LOAD R0, [buffer]`
 - Stack und Funktionsaufrufe:
   - `PUSH`
   - `POP`
@@ -71,7 +76,10 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
 
 - `examples/countdown.kasm` zeigt `DEC` und `JNZ`.
 - `examples/compare-max.kasm` zeigt `CMP`, Flags und `MOV` zwischen Registern.
-- `examples/memory-swap.kasm` zeigt direkten Memory-Zugriff.
+- `examples/memory-swap.kasm` zeigt benannte initialisierte Memory-Zellen.
+- `examples/memory-layout.kasm` zeigt `.equ`, `.org`, `.byte` und
+  Adressausdruecke.
+- `examples/memory-strings.kasm` zeigt `.string` und indizierte String-Iteration.
 - `examples/stack-calls.kasm` zeigt verschachtelte `CALL`/`RET` und gesicherte Register.
 
 ### CLI und Debugger
@@ -149,32 +157,26 @@ mehr nur zu einem Assembler-Spielzeug. Der Maschinenstand ist jetzt explizit:
 Diese Regeln sind Grundlage fuer `MUL`, `DIV`, weitere Spruenge,
 Assembler-Direktiven, Debugger und Disassembler.
 
-### 1. Memory im Assembler wirklich nutzbar machen
+### Abgeschlossen: Memory im Assembler wirklich nutzbar machen
 
 Direkte Adressen wie `[40]` reichen fuer erste Beispiele. Fuer laengere Programme
-braucht Memory aber Namen, Datenbereiche und kleine Ausdruecke.
+hat der Assembler jetzt Namen, Datenbereiche und kleine Ausdruecke:
 
-- Konstanten und Symbole:
-  - `.equ COUNT, 10`
-  - oder eine klare `COUNT = 10`-Syntax
-- Daten-Direktiven:
-  - `.byte`
-  - `.word`, falls die Registerbreite das rechtfertigt
-  - `.ascii`
-  - `.string`
-- Adresssteuerung:
-  - `.org`
-  - benannte Datenlabels
-  - klare Trennung oder klare Verbindung von Code- und Datenadressen
-- Ausdrucksauswertung:
-  - `end - start`
-  - `buffer + 1`
-  - Konstanten in Operanden statt nur nackter Literale
+- `.equ` definiert Konstanten.
+- `.org` bewegt den Cursor fuer das initiale Daten-Memory-Bild.
+- `.byte`, `.ascii` und `.string` initialisieren benannte Datenzellen.
+- Datenlabels werden als direkte Memory-Adressen benutzt, Code-Labels bleiben
+  Bytecode-Adressen.
+- Operanden und Datenwerte verstehen kleine `+`/`-`-Ausdruecke wie
+  `end - start` und `[buffer + 1]`.
+- `LOAD` und `STORE` koennen mit genau einem Laufzeit-Indexregister auf
+  `[R1]`, `[buffer + R1]` und `[R1 + 4]` zugreifen.
+- Ueberlappende Dateninitialisierer werden als Assembler-Fehler abgelehnt.
 
-Danach werden `LOAD` und `STORE` deutlich lesbarer als Programme mit vielen
-hart kodierten Adressen.
+`.word` bleibt bewusst offen: In der aktuellen 8-bit-Architektur ist ein
+gespeichertes Word genau eine Zelle, also deckt `.byte` den Bedarf sauberer ab.
 
-### 2. Instruktionssatz gezielt erweitern
+### 1. Instruktionssatz gezielt erweitern
 
 Neue Opcodes sollten dann zuerst Programme kuerzer oder klarer machen, die mit
 dem aktuellen Kern bereits moeglich sind.
@@ -204,7 +206,7 @@ dem aktuellen Kern bereits moeglich sind.
 Bei `DIV` muss noch festgelegt werden, wie Division durch null und Quotienten
 unter der bestehenden 8-bit-Semantik behandelt werden.
 
-### 3. Direkten CLI-Workflow ausbauen
+### 2. Direkten CLI-Workflow ausbauen
 
 Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
 werden, sollte zuerst der normale Aufruf ohne Gradle sauber werden und danach
@@ -247,11 +249,11 @@ das Bytecode- und Debugger-Tooling folgen.
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
   - spaeter optional im Bytecode-Format persistieren
 
-### 4. Parser und Diagnostik verbessern
+### 3. Parser und Diagnostik verbessern
 
-Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Direktiven,
-Ausdruecke, Strings und Makros werden mit strukturierterem Parsing deutlich
-leichter.
+Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Die neuen
+Direktiven, Ausdruecke und Strings machen eine sauberere Parser-Grenze jetzt
+nuetzlicher; Makros wuerden ohne sie schnell unhandlich.
 
 - Lexer/Parser-Grenze sauberer machen.
 - Operandentypen als Datenmodell einfuehren statt spaet Strings zu zerlegen.
@@ -262,7 +264,7 @@ leichter.
   - erwarteter Operandentyp
 - Mehrere Fehler in einem Assembler-Lauf sammeln, wo das sinnvoll ist.
 
-### 5. Editor- und Sprachtooling nachziehen
+### 4. Editor- und Sprachtooling nachziehen
 
 Das TextMate-Highlighting ist ein guter Anfang. Sobald Syntax und Semantik
 stabiler sind, lohnt sich reichhaltigeres Tooling.
@@ -273,15 +275,14 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 - Completion und Hover-Dokumentation.
 - Spaeter Diagnostics oder ein kleiner Language Server.
 
-### 6. Groessere Sprachideen spaeter
+### 5. Groessere Sprachideen spaeter
 
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 
 - Makros und `.include`.
 - Pseudo-Instruktionen mit Expansion im Assembler.
-- Indirekte Adressierung:
-  - `[R1]`
-  - `[R1 + 4]`
+- Komplexere Adressierung mit mehr als einem Laufzeitregister, falls reale
+  Beispiele sie brauchen.
 - Bessere I/O:
   - `PRINTC`
   - `PRINTS`

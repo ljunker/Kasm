@@ -1,0 +1,16 @@
+; Iterate a zero-terminated .string. PRINT still emits numeric bytes.
+  .equ TEXT_BASE, 96
+
+  .org TEXT_BASE
+name:
+  .string "KASM"
+
+  MOV R2, 0
+loop:
+  LOAD R0, [name + R2]
+  JZ R0, end
+  PRINT R0
+  INC R2
+  JMP loop
+end:
+  HALT

@@ -27,6 +27,9 @@ class VirtualMachine(
         running = true
         registers.fill(0)
         memory.fill(0)
+        program.initialMemory.forEach { (address, value) ->
+            memory[address] = value
+        }
         zeroFlag = false
         signFlag = false
         carryFlag = false
@@ -174,6 +177,22 @@ class VirtualMachine(
                 writeMemory(address, registers[register])
             }
 
+            Opcode.LOAD_INDEXED -> {
+                val register = readRegister(program)
+                val baseAddress = readByte(program)
+                val indexRegister = readRegister(program)
+
+                registers[register] = readMemory(indexedAddress(baseAddress, indexRegister))
+            }
+
+            Opcode.STORE_INDEXED -> {
+                val baseAddress = readByte(program)
+                val indexRegister = readRegister(program)
+                val register = readRegister(program)
+
+                writeMemory(indexedAddress(baseAddress, indexRegister), registers[register])
+            }
+
             Opcode.PUSH -> {
                 val register = readRegister(program)
 
@@ -258,6 +277,9 @@ class VirtualMachine(
             throw VmException("Memory address out of bounds: $address")
         }
     }
+
+    private fun indexedAddress(baseAddress: Int, indexRegister: Int): Int =
+        Architecture.normalizeWord(baseAddress + registers[indexRegister])
 
     private fun push(value: Int) {
         if (stackPointer == 0) {

@@ -4,12 +4,18 @@ This document describes the currently implemented KASM language and VM model.
 
 ## Source Form
 
-A KASM source file is a sequence of labels and instructions.
+A KASM source file is a sequence of labels, directives, and instructions.
 
 ```kasm
 ; Comments start with semicolon.
+.equ START_VALUE, 3
+
+.org 40
+counter:
+  .byte START_VALUE
+
 start:
-  MOV R0, 3
+  LOAD R0, [counter]
 
 loop:
   PRINT R0
@@ -18,8 +24,11 @@ loop:
   HALT
 ```
 
-Labels use `name:` and may appear before an instruction on the same line or on
-their own line. Instruction and register names are case-insensitive.
+Labels use `name:` and may appear before an instruction or directive on the
+same line or on their own line. A label attached to an instruction resolves to
+that bytecode address. A label attached to `.byte`, `.ascii`, or `.string` data
+resolves to that data-memory address. Instruction, directive, and register
+names are case-insensitive.
 
 Numeric literals may be written in decimal, hexadecimal with `0x`, or binary
 with `0b`.
@@ -28,16 +37,56 @@ with `0b`.
 
 KASM currently uses these operand forms:
 
-| Operand type   | Form                                 | Meaning                                              |
-|----------------|--------------------------------------|------------------------------------------------------|
-| Register       | `R0` through `R3`                    | One of the four general-purpose registers.           |
-| Byte value     | `42`, `0x2A`, `0b101010`, or a label | A value that resolves to `0..255`.                   |
-| Jump target    | A byte value or label                | A bytecode address that the VM may jump to.          |
-| Memory address | `[40]`, `[0x28]`, or `[label]`       | A direct data-memory cell that resolves to `0..255`. |
+| Operand type   | Form                                       | Meaning                                       |
+|----------------|--------------------------------------------|-----------------------------------------------|
+| Register       | `R0` through `R3`                          | One of the four general-purpose registers.    |
+| Byte value     | `42`, `COUNT`, or `end - start`            | A value expression that resolves to `0..255`. |
+| Jump target    | A byte-value expression                    | A bytecode address that the VM may jump to.   |
+| Memory address | `[40]`, `[buffer + 1]`, or `[buffer + R2]` | A direct or indexed data-memory cell.         |
 
-Byte values and direct memory addresses are checked by the assembler. Jump and
-call targets are also validated by the VM against the loaded program size when
-they execute.
+Byte values, direct memory addresses, and the static base of indexed memory
+addresses are checked by the assembler. Jump and call targets are also
+validated by the VM against the loaded program size when they execute.
+
+## Symbols, Expressions, And Data
+
+`.equ` defines a named constant. Constants, code labels, and data labels share
+one symbol namespace and can appear in byte-value expressions. Current
+expressions support numeric literals, symbols, parentheses, unary `-`, `+`, and
+`-`:
+
+```kasm
+.equ BUFFER_BASE, 64
+
+.org BUFFER_BASE
+buffer:
+  .byte 4, 9
+buffer_end:
+  .byte 0
+
+  LOAD R0, [buffer + 1]
+  MOV R1, buffer_end - buffer
+```
+
+Data directives initialize the VM data memory before the first instruction
+executes:
+
+| Directive         | Effect                                                      |
+|-------------------|-------------------------------------------------------------|
+| `.equ NAME, expr` | Define a symbol whose value is computed from an expression. |
+| `.org expr`       | Move the data-memory layout cursor to address `expr`.       |
+| `.byte expr, ...` | Initialize one data-memory cell per byte expression.        |
+| `.ascii "text"`   | Initialize one cell per ASCII byte without a terminator.    |
+| `.string "text"`  | Initialize ASCII bytes followed by one zero byte.           |
+
+`.org` affects only the data-memory layout cursor. It does not add bytecode or
+change bytecode instruction addresses. Reinitializing the same data-memory
+address through overlapping data directives is an assembly error. String
+directives support ASCII text and the escapes `\0`, `\n`, `\r`, `\t`, `\"`,
+and `\\`.
+
+There is no `.word` directive yet because the current stored word size is one
+8-bit cell.
 
 ## Architecture
 
@@ -50,6 +99,8 @@ KASM currently uses an explicit 8-bit word model:
   `PRINT` therefore prints values in `0..255`.
 - `ADD`, `SUB`, `INC`, and `DEC` write wrapped 8-bit results. For example,
   incrementing `255` stores `0`.
+- Indexed memory forms add an 8-bit static base and one 8-bit register value;
+  the effective data-memory address wraps to `0..255`.
 
 Signed interpretation is used by the signed flag jumps after a flagged
 operation. In that interpretation the same stored byte range represents
@@ -106,15 +157,35 @@ depend on the result flags.
 Program bytecode and data memory are separate. The current VM provides 256
 8-bit data-memory cells addressed as `0..255`.
 
-`LOAD` and `STORE` use direct data-memory addresses only:
+`LOAD` and `STORE` accept direct data-memory addresses and one-register indexed
+addresses. Literals still work, but data labels make a source layout explicit:
 
 ```kasm
-  MOV R0, 9
-  STORE [40], R0
-  LOAD R1, [40]
+.org 40
+name:
+  .string "OK"
+
+  MOV R2, 0
+loop:
+  LOAD R0, [name + R2]
+  JZ R0, end
+  PRINT R0
+  INC R2
+  JMP loop
+end:
+  HALT
 ```
 
-Indirect forms such as `[R1]` and `[R1 + 4]` are not implemented yet.
+Direct forms such as `[name]` and `[name + 1]` are resolved completely by the
+assembler. Indexed forms use one runtime register with a static base:
+
+- `[R2]`
+- `[name + R2]`
+- `[R2 + name]`
+- `[R2 + 4]`
+
+Address forms with two runtime registers such as `[R1 + R2]` are not
+implemented.
 
 ## Stack and Calls
 
@@ -128,9 +199,8 @@ instruction yet.
 address and jumps back to it. User `PUSH` and `POP` instructions therefore share
 stack space with nested calls.
 
-The VM rejects stack underflow and stack overflow. Programs that use fixed
-high-memory cells with `LOAD` or `STORE` must avoid colliding with the active
-stack until a more explicit memory layout exists.
+The VM rejects stack underflow and stack overflow. Programs that lay out fixed
+high-memory data must avoid colliding with the active stack.
 
 ## Call Convention
 

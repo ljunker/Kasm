@@ -109,6 +109,36 @@ class VirtualMachineTest {
     }
 
     @Test
+    fun loadsAndStoresThroughIndexedMemoryAddresses() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            .org 40
+            text:
+              .string "OK"
+            copy:
+              .byte 0, 0
+
+              MOV R1, 0
+              LOAD R0, [text + R1]
+              STORE [copy + R1], R0
+              INC R1
+              LOAD R0, [text + R1]
+              STORE [copy + R1], R0
+              LOAD R2, [copy]
+              LOAD R3, [copy + 1]
+              PRINT R2
+              PRINT R3
+              HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("79", "75"), output)
+    }
+
+    @Test
     fun wrapsWordArithmeticAndSetsCarryFlags() {
         val output = mutableListOf<String>()
         val vm = VirtualMachine { line -> output += line }

@@ -51,10 +51,21 @@ class ExampleProgramGoldenTest {
             ),
             Example(
                 fileName = "memory-swap.kasm",
-                hexDump = "01 00 04 01 01 09 11 28 00 11 29 01 14 11 14 26 FF 12 02 12 03 " +
+                hexDump = "14 05 14 1A FF 12 02 12 03 " +
                         "10 02 28 10 03 29 11 28 03 11 29 02 13 03 13 02 15 10 00 28 " +
                         "06 00 10 00 29 06 00 15",
                 output = listOf("9", "4")
+            ),
+            Example(
+                fileName = "memory-layout.kasm",
+                hexDump = "10 00 50 11 60 00 10 00 51 11 61 00 10 01 60 10 02 61 " +
+                        "02 01 02 06 01 01 00 10 06 00 FF",
+                output = listOf("18", "16")
+            ),
+            Example(
+                fileName = "memory-strings.kasm",
+                hexDump = "01 02 00 16 00 60 02 05 00 10 06 00 09 02 04 03 FF",
+                output = listOf("75", "65", "83", "77")
             ),
             Example(
                 fileName = "stack-calls.kasm",

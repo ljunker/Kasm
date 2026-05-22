@@ -79,6 +79,30 @@ class AssemblerTest {
     }
 
     @Test
+    fun assemblesIndexedMemoryAddresses() {
+        val program = Assembler().assemble(
+            """
+            MOV R1, 1
+            LOAD R0, [40 + R1]
+            STORE [R1 + 60], R0
+            LOAD R2, [R3]
+            HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.MOV.code, 1, 1,
+                Opcode.LOAD_INDEXED.code, 0, 40, 1,
+                Opcode.STORE_INDEXED.code, 60, 1, 0,
+                Opcode.LOAD_INDEXED.code, 2, 0, 3,
+                Opcode.HALT.code
+            ),
+            program
+        )
+    }
+
+    @Test
     fun requiresMemoryAddressBrackets() {
         val exception = assertFailsWith<AssemblyException> {
             Assembler().assemble("LOAD R0, 10")
@@ -141,5 +165,80 @@ class AssemblerTest {
         }
 
         assertEquals("Line 1: register 'R4' is out of range", exception.message)
+    }
+
+    @Test
+    fun initializesNamedDataWithConstantsAndExpressions() {
+        val program = Assembler().assemble(
+            """
+            .equ BASE, 40
+
+            .org BASE
+            first:
+              .byte 4, 9
+            first_end:
+            title:
+              .ascii "OK"
+            marker:
+              .string "!"
+
+              LOAD R0, [first + 1]
+              MOV R1, first_end - first
+              HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.LOAD.code, 0, 41,
+                Opcode.MOV.code, 1, 2,
+                Opcode.HALT.code
+            ).bytes,
+            program.bytes
+        )
+        assertEquals(
+            mapOf(
+                40 to 4,
+                41 to 9,
+                42 to 'O'.code,
+                43 to 'K'.code,
+                44 to '!'.code,
+                45 to 0
+            ),
+            program.initialMemory
+        )
+    }
+
+    @Test
+    fun rejectsOverlappingDataInitializers() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble(
+                """
+                .org 12
+                  .byte 1, 2
+                .org 13
+                  .byte 3
+                HALT
+                """.trimIndent()
+            )
+        }
+
+        assertEquals(
+            "Line 4: data memory address 13 is initialized more than once",
+            exception.message
+        )
+    }
+
+    @Test
+    fun rejectsMemoryAddressesWithTwoIndexRegisters() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble("LOAD R0, [R1 + R2]")
+        }
+
+        assertEquals(
+            "Line 1: indexed memory address '[R1 + R2]' must use one register " +
+                    "as [register] or [base + register]",
+            exception.message
+        )
     }
 }

@@ -26,12 +26,17 @@ enum class Opcode(
     POP(0x13, "POP", OperandType.REGISTER),
     CALL(0x14, "CALL", OperandType.JUMP_TARGET),
     RET(0x15, "RET"),
+    LOAD_INDEXED(0x16, "LOAD", OperandType.REGISTER, OperandType.INDEXED_MEMORY_ADDRESS),
+    STORE_INDEXED(0x17, "STORE", OperandType.INDEXED_MEMORY_ADDRESS, OperandType.REGISTER),
     HALT(0xFF, "HALT");
 
     val operandTypes: List<OperandType> = operandTypes.toList()
 
     val operandCount: Int
         get() = operandTypes.size
+
+    val operandByteCount: Int
+        get() = operandTypes.sumOf(OperandType::byteCount)
 
     companion object {
         private val byMnemonic = entries
@@ -47,9 +52,12 @@ enum class Opcode(
     }
 }
 
-enum class OperandType {
-    REGISTER,
-    BYTE_VALUE,
-    JUMP_TARGET,
-    MEMORY_ADDRESS
+enum class OperandType(
+    val byteCount: Int
+) {
+    REGISTER(1),
+    BYTE_VALUE(1),
+    JUMP_TARGET(1),
+    MEMORY_ADDRESS(1),
+    INDEXED_MEMORY_ADDRESS(2)
 }

@@ -7,12 +7,14 @@ class Assembler {
 
     fun assembleWithDebugInfo(source: String): DebugProgram {
         val statements = parseStatements(source)
-
-        val labels = collectLabels(statements)
-        val encoding = encode(statements, labels)
+        val symbols = collectSymbols(statements)
+        val encoding = encode(statements, symbols)
 
         return DebugProgram(
-            program = Program(encoding.bytes),
+            program = Program(
+                bytes = encoding.bytes,
+                initialMemory = encoding.initialMemory
+            ),
             sourceMap = SourceMap(encoding.sourceLocations)
         )
     }
@@ -23,8 +25,7 @@ class Assembler {
         source.lines().forEachIndexed { index, rawLine ->
             val lineNumber = index + 1
 
-            var line = rawLine
-                .substringBefore(";")
+            var line = stripComment(rawLine)
                 .trim()
 
             if (line.isBlank()) {
@@ -48,21 +49,26 @@ class Assembler {
                 }
 
                 val parts = line.split(Regex("\\s+"), limit = 2)
-                val mnemonic = parts[0].uppercase()
-
-                val arguments = parts
-                    .getOrNull(1)
-                    ?.split(",")
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotBlank() }
-                    ?: emptyList()
-
-                statements += Statement.Instruction(
-                    mnemonic = mnemonic,
-                    arguments = arguments,
-                    lineNumber = lineNumber,
-                    original = rawLine
+                val name = parts[0].uppercase()
+                val arguments = splitArguments(
+                    value = parts.getOrNull(1).orEmpty(),
+                    lineNumber = lineNumber
                 )
+
+                statements += if (name.startsWith(".")) {
+                    Statement.Directive(
+                        name = name,
+                        arguments = arguments,
+                        lineNumber = lineNumber
+                    )
+                } else {
+                    Statement.Instruction(
+                        mnemonic = name,
+                        arguments = arguments,
+                        lineNumber = lineNumber,
+                        original = rawLine
+                    )
+                }
 
                 line = ""
             }
@@ -71,33 +77,494 @@ class Assembler {
         return statements
     }
 
-    private fun collectLabels(statements: List<Statement>): Map<String, Int> {
-        val labels = mutableMapOf<String, Int>()
-        var address = 0
+    private fun stripComment(line: String): String {
+        var inString = false
+        var escaped = false
+
+        line.forEachIndexed { index, char ->
+            when {
+                escaped -> escaped = false
+                inString && char == '\\' -> escaped = true
+                char == '"' -> inString = !inString
+                char == ';' && !inString -> return line.substring(0, index)
+            }
+        }
+
+        return line
+    }
+
+    private fun splitArguments(value: String, lineNumber: Int): List<String> {
+        if (value.isBlank()) {
+            return emptyList()
+        }
+
+        val arguments = mutableListOf<String>()
+        val current = StringBuilder()
+        var inString = false
+        var escaped = false
+
+        value.forEach { char ->
+            when {
+                escaped -> {
+                    current.append(char)
+                    escaped = false
+                }
+
+                inString && char == '\\' -> {
+                    current.append(char)
+                    escaped = true
+                }
+
+                char == '"' -> {
+                    current.append(char)
+                    inString = !inString
+                }
+
+                char == ',' && !inString -> {
+                    current.toString().trim()
+                        .takeIf(String::isNotBlank)
+                        ?.let(arguments::add)
+                    current.clear()
+                }
+
+                else -> current.append(char)
+            }
+        }
+
+        if (inString) {
+            throw AssemblyException("Line $lineNumber: unterminated string literal")
+        }
+
+        current.toString().trim()
+            .takeIf(String::isNotBlank)
+            ?.let(arguments::add)
+
+        return arguments
+    }
+
+    private fun collectSymbols(statements: List<Statement>): Symbols {
+        val symbols = Symbols(collectConstantDefinitions(statements))
+        val pendingLabels = mutableListOf<Statement.Label>()
+        var codeAddress = 0
+        var dataAddress = 0
 
         for (statement in statements) {
             when (statement) {
-                is Statement.Label -> {
-                    if (statement.name in labels) {
-                        throw AssemblyException(
-                            "Line ${statement.lineNumber}: duplicate label '${statement.name}'"
-                        )
-                    }
+                is Statement.Label ->
+                    pendingLabels += statement
 
-                    labels[statement.name] = address
+                is Statement.Instruction -> {
+                    defineLabels(pendingLabels, codeAddress, symbols)
+
+                    val opcode = resolveOpcode(statement)
+
+                    ensureArgumentCount(statement, opcode)
+
+                    codeAddress += 1 + opcode.operandByteCount
                 }
+
+                is Statement.Directive -> {
+                    val kind = directiveKind(statement)
+
+                    ensureDirectiveArgumentCount(statement, kind)
+
+                    when (kind) {
+                        DirectiveKind.EQU -> Unit
+
+                        DirectiveKind.ORG ->
+                            dataAddress = parseByteExpression(
+                                value = statement.arguments[0],
+                                symbols = symbols,
+                                lineNumber = statement.lineNumber
+                            )
+
+                        DirectiveKind.BYTE,
+                        DirectiveKind.ASCII,
+                        DirectiveKind.STRING -> {
+                            defineLabels(pendingLabels, dataAddress, symbols)
+
+                            val size = dataDirectiveSize(statement, kind)
+
+                            ensureDataRange(statement, dataAddress, size)
+                            dataAddress += size
+                        }
+                    }
+                }
+            }
+        }
+
+        defineLabels(pendingLabels, codeAddress, symbols)
+
+        return symbols
+    }
+
+    private fun collectConstantDefinitions(
+        statements: List<Statement>
+    ): Map<String, ConstantDefinition> {
+        val definitions = mutableMapOf<String, ConstantDefinition>()
+
+        statements
+            .filterIsInstance<Statement.Directive>()
+            .filter { statement -> statement.name == ".EQU" }
+            .forEach { statement ->
+                ensureDirectiveArgumentCount(statement, DirectiveKind.EQU)
+
+                val name = statement.arguments[0]
+
+                if (!SYMBOL_REGEX.matches(name)) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: invalid symbol name '$name'"
+                    )
+                }
+
+                if (name in definitions) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: duplicate symbol '$name'"
+                    )
+                }
+
+                definitions[name] = ConstantDefinition(
+                    expression = parseExpression(statement.arguments[1], statement.lineNumber),
+                    lineNumber = statement.lineNumber
+                )
+            }
+
+        return definitions
+    }
+
+    private fun defineLabels(
+        pendingLabels: MutableList<Statement.Label>,
+        address: Int,
+        symbols: Symbols
+    ) {
+        pendingLabels.forEach { label ->
+            symbols.defineLabel(
+                name = label.name,
+                address = address,
+                lineNumber = label.lineNumber
+            )
+        }
+        pendingLabels.clear()
+    }
+
+    private fun dataDirectiveSize(statement: Statement.Directive, kind: DirectiveKind): Int =
+        when (kind) {
+            DirectiveKind.BYTE ->
+                statement.arguments.size
+
+            DirectiveKind.ASCII ->
+                parseAsciiBytes(statement.arguments[0], statement.lineNumber).size
+
+            DirectiveKind.STRING ->
+                parseAsciiBytes(statement.arguments[0], statement.lineNumber).size + 1
+
+            DirectiveKind.EQU,
+            DirectiveKind.ORG ->
+                0
+        }
+
+    private fun ensureDataRange(
+        statement: Statement.Directive,
+        startAddress: Int,
+        size: Int
+    ) {
+        if (size == 0) {
+            return
+        }
+
+        val endAddress = startAddress + size - 1
+
+        if (startAddress !in Architecture.wordRange || endAddress !in Architecture.wordRange) {
+            throw AssemblyException(
+                "Line ${statement.lineNumber}: ${statement.name.lowercase()} data range " +
+                        "$startAddress..$endAddress is outside ${Architecture.wordRange}"
+            )
+        }
+    }
+
+    private fun encode(
+        statements: List<Statement>,
+        symbols: Symbols
+    ): Encoding {
+        val bytes = mutableListOf<Int>()
+        val sourceLocations = mutableMapOf<Int, SourceLocation>()
+        val initialMemory = mutableMapOf<Int, Int>()
+        var dataAddress = 0
+
+        for (statement in statements) {
+            when (statement) {
+                is Statement.Label -> Unit
 
                 is Statement.Instruction -> {
                     val opcode = resolveOpcode(statement)
 
                     ensureArgumentCount(statement, opcode)
 
-                    address += 1 + opcode.operandCount
+                    sourceLocations[bytes.size] = SourceLocation(
+                        lineNumber = statement.lineNumber,
+                        source = statement.original
+                    )
+                    bytes += opcode.code
+
+                    encodeInstruction(statement, opcode, symbols, bytes)
+                }
+
+                is Statement.Directive -> {
+                    val kind = directiveKind(statement)
+
+                    ensureDirectiveArgumentCount(statement, kind)
+
+                    when (kind) {
+                        DirectiveKind.EQU -> Unit
+
+                        DirectiveKind.ORG ->
+                            dataAddress = parseByteExpression(
+                                value = statement.arguments[0],
+                                symbols = symbols,
+                                lineNumber = statement.lineNumber
+                            )
+
+                        DirectiveKind.BYTE,
+                        DirectiveKind.ASCII,
+                        DirectiveKind.STRING -> {
+                            val dataBytes = encodeDataDirective(statement, kind, symbols)
+
+                            ensureDataRange(statement, dataAddress, dataBytes.size)
+                            writeInitialMemory(
+                                statement = statement,
+                                initialMemory = initialMemory,
+                                startAddress = dataAddress,
+                                dataBytes = dataBytes
+                            )
+                            dataAddress += dataBytes.size
+                        }
+                    }
                 }
             }
         }
 
-        return labels
+        return Encoding(
+            bytes = bytes,
+            sourceLocations = sourceLocations,
+            initialMemory = initialMemory
+        )
+    }
+
+    private fun encodeInstruction(
+        statement: Statement.Instruction,
+        opcode: Opcode,
+        symbols: Symbols,
+        bytes: MutableList<Int>
+    ) {
+        when (opcode) {
+            Opcode.MOV -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
+            }
+
+            Opcode.MOV_REGISTER -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.ADD,
+            Opcode.SUB,
+            Opcode.CMP -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.INC,
+            Opcode.DEC -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+            }
+
+            Opcode.JMP -> {
+                bytes += parseByteExpression(statement.arguments[0], symbols, statement.lineNumber)
+            }
+
+            Opcode.JZ,
+            Opcode.JNZ -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
+            }
+
+            Opcode.JE,
+            Opcode.JNE,
+            Opcode.JG,
+            Opcode.JL,
+            Opcode.CALL -> {
+                bytes += parseByteExpression(statement.arguments[0], symbols, statement.lineNumber)
+            }
+
+            Opcode.LOAD -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseDirectMemoryAddress(statement.arguments[1], symbols, statement.lineNumber)
+            }
+
+            Opcode.STORE -> {
+                bytes += parseDirectMemoryAddress(statement.arguments[0], symbols, statement.lineNumber)
+                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.LOAD_INDEXED -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                encodeIndexedMemoryAddress(
+                    value = statement.arguments[1],
+                    symbols = symbols,
+                    lineNumber = statement.lineNumber,
+                    bytes = bytes
+                )
+            }
+
+            Opcode.STORE_INDEXED -> {
+                encodeIndexedMemoryAddress(
+                    value = statement.arguments[0],
+                    symbols = symbols,
+                    lineNumber = statement.lineNumber,
+                    bytes = bytes
+                )
+                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.PUSH,
+            Opcode.POP -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+            }
+
+            Opcode.PRINT -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+            }
+
+            Opcode.RET,
+            Opcode.HALT -> {
+                // no operands
+            }
+        }
+    }
+
+    private fun encodeDataDirective(
+        statement: Statement.Directive,
+        kind: DirectiveKind,
+        symbols: Symbols
+    ): List<Int> =
+        when (kind) {
+            DirectiveKind.BYTE ->
+                statement.arguments.map { argument ->
+                    parseByteExpression(argument, symbols, statement.lineNumber)
+                }
+
+            DirectiveKind.ASCII ->
+                parseAsciiBytes(statement.arguments[0], statement.lineNumber)
+
+            DirectiveKind.STRING ->
+                parseAsciiBytes(statement.arguments[0], statement.lineNumber) + 0
+
+            DirectiveKind.EQU,
+            DirectiveKind.ORG ->
+                emptyList()
+        }
+
+    private fun writeInitialMemory(
+        statement: Statement.Directive,
+        initialMemory: MutableMap<Int, Int>,
+        startAddress: Int,
+        dataBytes: List<Int>
+    ) {
+        dataBytes.forEachIndexed { offset, value ->
+            val address = startAddress + offset
+
+            if (initialMemory.put(address, value) != null) {
+                throw AssemblyException(
+                    "Line ${statement.lineNumber}: data memory address $address is " +
+                            "initialized more than once"
+                )
+            }
+        }
+    }
+
+    private fun directiveKind(statement: Statement.Directive): DirectiveKind =
+        when (statement.name) {
+            ".EQU" -> DirectiveKind.EQU
+            ".ORG" -> DirectiveKind.ORG
+            ".BYTE" -> DirectiveKind.BYTE
+            ".ASCII" -> DirectiveKind.ASCII
+            ".STRING" -> DirectiveKind.STRING
+            else -> throw AssemblyException(
+                "Line ${statement.lineNumber}: unknown directive '${statement.name}'"
+            )
+        }
+
+    private fun ensureDirectiveArgumentCount(
+        statement: Statement.Directive,
+        kind: DirectiveKind
+    ) {
+        val count = statement.arguments.size
+
+        when (kind) {
+            DirectiveKind.EQU -> {
+                if (count != 2) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: .equ expects 2 argument(s), got $count"
+                    )
+                }
+            }
+
+            DirectiveKind.ORG -> {
+                if (count != 1) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: .org expects 1 argument(s), got $count"
+                    )
+                }
+            }
+
+            DirectiveKind.BYTE -> {
+                if (count == 0) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: .byte expects at least 1 argument"
+                    )
+                }
+            }
+
+            DirectiveKind.ASCII,
+            DirectiveKind.STRING -> {
+                if (count != 1) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: ${statement.name.lowercase()} expects " +
+                                "1 argument(s), got $count"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun resolveOpcode(statement: Statement.Instruction): Opcode {
+        val opcode = Opcode.fromMnemonic(statement.mnemonic)
+            ?: throw AssemblyException(
+                "Line ${statement.lineNumber}: unknown instruction '${statement.mnemonic}'"
+            )
+
+        if (opcode == Opcode.MOV && statement.arguments.getOrNull(1)?.let(::isRegister) == true) {
+            return Opcode.MOV_REGISTER
+        }
+
+        if (
+            opcode == Opcode.LOAD &&
+            statement.arguments.getOrNull(1)
+                ?.let { isIndexedMemoryAddress(it, statement.lineNumber) } == true
+        ) {
+            return Opcode.LOAD_INDEXED
+        }
+
+        if (
+            opcode == Opcode.STORE &&
+            statement.arguments.getOrNull(0)
+                ?.let { isIndexedMemoryAddress(it, statement.lineNumber) } == true
+        ) {
+            return Opcode.STORE_INDEXED
+        }
+
+        return opcode
     }
 
     private fun ensureArgumentCount(
@@ -112,129 +579,161 @@ class Assembler {
         }
     }
 
-    private fun encode(
-        statements: List<Statement>,
-        labels: Map<String, Int>
-    ): Encoding {
-        val bytes = mutableListOf<Int>()
-        val sourceLocations = mutableMapOf<Int, SourceLocation>()
-
-        for (statement in statements) {
-            if (statement !is Statement.Instruction) {
-                continue
-            }
-
-            val opcode = resolveOpcode(statement)
-
-            ensureArgumentCount(statement, opcode)
-
-            sourceLocations[bytes.size] = SourceLocation(
-                lineNumber = statement.lineNumber,
-                source = statement.original
-            )
-            bytes += opcode.code
-
-            when (opcode) {
-                Opcode.MOV -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                    bytes += parseValueOrLabel(statement.arguments[1], labels, statement.lineNumber)
-                }
-
-                Opcode.MOV_REGISTER -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                    bytes += parseRegister(statement.arguments[1], statement.lineNumber)
-                }
-
-                Opcode.ADD,
-                Opcode.SUB,
-                Opcode.CMP -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                    bytes += parseRegister(statement.arguments[1], statement.lineNumber)
-                }
-
-                Opcode.INC,
-                Opcode.DEC -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                }
-
-                Opcode.JMP -> {
-                    bytes += parseValueOrLabel(statement.arguments[0], labels, statement.lineNumber)
-                }
-
-                Opcode.JZ,
-                Opcode.JNZ -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                    bytes += parseValueOrLabel(statement.arguments[1], labels, statement.lineNumber)
-                }
-
-                Opcode.JE,
-                Opcode.JNE,
-                Opcode.JG,
-                Opcode.JL,
-                Opcode.CALL -> {
-                    bytes += parseValueOrLabel(statement.arguments[0], labels, statement.lineNumber)
-                }
-
-                Opcode.LOAD -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                    bytes += parseMemoryAddress(statement.arguments[1], labels, statement.lineNumber)
-                }
-
-                Opcode.STORE -> {
-                    bytes += parseMemoryAddress(statement.arguments[0], labels, statement.lineNumber)
-                    bytes += parseRegister(statement.arguments[1], statement.lineNumber)
-                }
-
-                Opcode.PUSH,
-                Opcode.POP -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                }
-
-                Opcode.PRINT -> {
-                    bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                }
-
-                Opcode.RET,
-                Opcode.HALT -> {
-                    // no operands
-                }
-            }
-        }
-
-        return Encoding(
-            bytes = bytes,
-            sourceLocations = sourceLocations
-        )
-    }
-
-    private fun resolveOpcode(statement: Statement.Instruction): Opcode {
-        val opcode = Opcode.fromMnemonic(statement.mnemonic)
-            ?: throw AssemblyException(
-                "Line ${statement.lineNumber}: unknown instruction '${statement.mnemonic}'"
-            )
-
-        if (opcode == Opcode.MOV && statement.arguments.getOrNull(1)?.let(::isRegister) == true) {
-            return Opcode.MOV_REGISTER
-        }
-
-        return opcode
-    }
-
     private fun isRegister(value: String): Boolean =
         REGISTER_REGEX.matchEntire(value.uppercase()) != null
 
-    private fun parseMemoryAddress(
+    private fun isIndexedMemoryAddress(value: String, lineNumber: Int): Boolean {
+        val expression = parseMemoryExpression(value, lineNumber)
+            ?: return false
+
+        return splitIndexedMemoryExpression(expression, value, lineNumber) != null
+    }
+
+    private fun parseDirectMemoryAddress(
         value: String,
-        labels: Map<String, Int>,
+        symbols: Symbols,
         lineNumber: Int
     ): Int {
-        val match = MEMORY_ADDRESS_REGEX.matchEntire(value.trim())
-            ?: throw AssemblyException(
-                "Line $lineNumber: memory address '$value' must use [value]"
+        val expressionValue = memoryExpressionValue(value)
+            ?: throwMemoryAddressSyntax(value, lineNumber)
+        val expression = parseExpression(expressionValue, lineNumber)
+
+        if (splitIndexedMemoryExpression(expression, value, lineNumber) != null) {
+            throw AssemblyException("Line $lineNumber: indexed memory address '$value' is expected")
+        }
+
+        return parseByteExpression(expressionValue, expression, symbols, lineNumber)
+    }
+
+    private fun encodeIndexedMemoryAddress(
+        value: String,
+        symbols: Symbols,
+        lineNumber: Int,
+        bytes: MutableList<Int>
+    ) {
+        val expression = parseMemoryExpression(value, lineNumber)
+            ?: throwMemoryAddressSyntax(value, lineNumber)
+        val indexed = splitIndexedMemoryExpression(expression, value, lineNumber)
+            ?: throw AssemblyException("Line $lineNumber: indexed memory address '$value' is expected")
+
+        bytes += parseByteExpression(value, indexed.base, symbols, lineNumber)
+        bytes += indexed.indexRegister
+    }
+
+    private fun parseMemoryExpression(value: String, lineNumber: Int): Expression? {
+        val expressionValue = memoryExpressionValue(value)
+            ?: return null
+
+        return parseExpression(expressionValue, lineNumber)
+    }
+
+    private fun memoryExpressionValue(value: String): String? =
+        MEMORY_ADDRESS_REGEX
+            .matchEntire(value.trim())
+            ?.groupValues
+            ?.get(1)
+            ?.trim()
+
+    private fun throwMemoryAddressSyntax(value: String, lineNumber: Int): Nothing =
+        throw AssemblyException(
+            "Line $lineNumber: memory address '$value' must use [value]"
+        )
+
+    private fun splitIndexedMemoryExpression(
+        expression: Expression,
+        value: String,
+        lineNumber: Int
+    ): IndexedMemoryExpression? =
+        when (expression) {
+            is Expression.Symbol -> {
+                if (isRegister(expression.name)) {
+                    IndexedMemoryExpression(
+                        base = Expression.Number(0),
+                        indexRegister = parseRegister(expression.name, lineNumber)
+                    )
+                } else {
+                    null
+                }
+            }
+
+            is Expression.Add -> combineIndexedTerms(
+                left = expression.left,
+                right = expression.right,
+                combineBase = Expression::Add,
+                allowRightIndex = true,
+                value = value,
+                lineNumber = lineNumber
             )
 
-        return parseValueOrLabel(match.groupValues[1].trim(), labels, lineNumber)
+            is Expression.Subtract -> combineIndexedTerms(
+                left = expression.left,
+                right = expression.right,
+                combineBase = Expression::Subtract,
+                allowRightIndex = false,
+                value = value,
+                lineNumber = lineNumber
+            )
+
+            is Expression.Number -> null
+
+            is Expression.Negate -> {
+                if (containsRegister(expression)) {
+                    invalidIndexedMemoryAddress(value, lineNumber)
+                }
+
+                null
+            }
+        }
+
+    private fun combineIndexedTerms(
+        left: Expression,
+        right: Expression,
+        combineBase: (Expression, Expression) -> Expression,
+        allowRightIndex: Boolean,
+        value: String,
+        lineNumber: Int
+    ): IndexedMemoryExpression? {
+        val leftIndexed = splitIndexedMemoryExpression(left, value, lineNumber)
+        val rightIndexed = splitIndexedMemoryExpression(right, value, lineNumber)
+
+        return when {
+            leftIndexed != null && rightIndexed == null && !containsRegister(right) ->
+                leftIndexed.copy(base = combineBase(leftIndexed.base, right))
+
+            allowRightIndex &&
+                    rightIndexed != null &&
+                    leftIndexed == null &&
+                    !containsRegister(left) ->
+                rightIndexed.copy(base = combineBase(left, rightIndexed.base))
+
+            leftIndexed == null && rightIndexed == null ->
+                if (containsRegister(left) || containsRegister(right)) {
+                    invalidIndexedMemoryAddress(value, lineNumber)
+                } else {
+                    null
+                }
+
+            else ->
+                invalidIndexedMemoryAddress(value, lineNumber)
+        }
     }
+
+    private fun containsRegister(expression: Expression): Boolean =
+        when (expression) {
+            is Expression.Number -> false
+            is Expression.Symbol -> isRegister(expression.name)
+            is Expression.Add -> containsRegister(expression.left) || containsRegister(expression.right)
+            is Expression.Subtract ->
+                containsRegister(expression.left) || containsRegister(expression.right)
+
+            is Expression.Negate -> containsRegister(expression.expression)
+        }
+
+    private fun invalidIndexedMemoryAddress(value: String, lineNumber: Int): Nothing =
+        throw AssemblyException(
+            "Line $lineNumber: indexed memory address '$value' must use one register " +
+                    "as [register] or [base + register]"
+        )
 
     private fun parseRegister(value: String, lineNumber: Int): Int {
         val match = REGISTER_REGEX.matchEntire(value.uppercase())
@@ -253,18 +752,23 @@ class Assembler {
         return register
     }
 
-    private fun parseValueOrLabel(
+    private fun parseByteExpression(
         value: String,
-        labels: Map<String, Int>,
+        symbols: Symbols,
         lineNumber: Int
     ): Int {
-        val number = parseNumber(value)
+        val expression = parseExpression(value, lineNumber)
 
-        val resolved = number
-            ?: labels[value]
-            ?: throw AssemblyException(
-                "Line $lineNumber: unknown value or label '$value'"
-            )
+        return parseByteExpression(value, expression, symbols, lineNumber)
+    }
+
+    private fun parseByteExpression(
+        value: String,
+        expression: Expression,
+        symbols: Symbols,
+        lineNumber: Int
+    ): Int {
+        val resolved = evaluateExpression(expression, symbols, lineNumber)
 
         if (resolved !in Architecture.wordRange) {
             throw AssemblyException(
@@ -276,19 +780,242 @@ class Assembler {
         return resolved
     }
 
-    private fun parseNumber(value: String): Int? {
-        val trimmed = value.trim()
+    private fun parseExpression(value: String, lineNumber: Int): Expression =
+        ExpressionParser(value.trim(), lineNumber).parse()
 
-        return when {
-            trimmed.startsWith("0x", ignoreCase = true) ->
-                trimmed.drop(2).toIntOrNull(16)
+    private fun evaluateExpression(
+        expression: Expression,
+        symbols: Symbols,
+        lineNumber: Int,
+        resolvingConstants: MutableSet<String> = mutableSetOf()
+    ): Int =
+        when (expression) {
+            is Expression.Number -> expression.value
+            is Expression.Symbol -> symbols.resolve(
+                name = expression.name,
+                lineNumber = lineNumber,
+                resolvingConstants = resolvingConstants
+            )
 
-            trimmed.startsWith("0b", ignoreCase = true) ->
-                trimmed.drop(2).toIntOrNull(2)
+            is Expression.Add ->
+                evaluateExpression(expression.left, symbols, lineNumber, resolvingConstants) +
+                        evaluateExpression(expression.right, symbols, lineNumber, resolvingConstants)
 
-            else ->
-                trimmed.toIntOrNull()
+            is Expression.Subtract ->
+                evaluateExpression(expression.left, symbols, lineNumber, resolvingConstants) -
+                        evaluateExpression(expression.right, symbols, lineNumber, resolvingConstants)
+
+            is Expression.Negate ->
+                -evaluateExpression(expression.expression, symbols, lineNumber, resolvingConstants)
         }
+
+    private fun parseAsciiBytes(value: String, lineNumber: Int): List<Int> {
+        if (!value.startsWith('"')) {
+            throw AssemblyException("Line $lineNumber: expected string literal, got '$value'")
+        }
+
+        val bytes = mutableListOf<Int>()
+        var index = 1
+
+        while (index < value.length) {
+            val char = value[index++]
+
+            if (char == '"') {
+                if (index != value.length) {
+                    throw AssemblyException("Line $lineNumber: invalid string literal '$value'")
+                }
+
+                return bytes
+            }
+
+            val decoded = if (char == '\\') {
+                if (index == value.length) {
+                    throw AssemblyException("Line $lineNumber: unterminated string escape")
+                }
+
+                when (val escaped = value[index++]) {
+                    '0' -> '\u0000'
+                    'n' -> '\n'
+                    'r' -> '\r'
+                    't' -> '\t'
+                    '"' -> '"'
+                    '\\' -> '\\'
+                    else -> throw AssemblyException(
+                        "Line $lineNumber: unsupported string escape '\\$escaped'"
+                    )
+                }
+            } else {
+                char
+            }
+
+            if (decoded.code !in 0..ASCII_MAX) {
+                throw AssemblyException(
+                    "Line $lineNumber: string literal contains non-ASCII character '$decoded'"
+                )
+            }
+
+            bytes += decoded.code
+        }
+
+        throw AssemblyException("Line $lineNumber: unterminated string literal")
+    }
+
+    private inner class Symbols(
+        private val constants: Map<String, ConstantDefinition>
+    ) {
+        private val labels = mutableMapOf<String, Int>()
+
+        fun defineLabel(name: String, address: Int, lineNumber: Int) {
+            if (name in labels || name in constants) {
+                throw AssemblyException("Line $lineNumber: duplicate symbol '$name'")
+            }
+
+            labels[name] = address
+        }
+
+        fun resolve(
+            name: String,
+            lineNumber: Int,
+            resolvingConstants: MutableSet<String>
+        ): Int {
+            labels[name]?.let { address ->
+                return address
+            }
+
+            val constant = constants[name]
+                ?: throw AssemblyException("Line $lineNumber: unknown symbol '$name'")
+
+            if (!resolvingConstants.add(name)) {
+                throw AssemblyException("Line $lineNumber: cyclic constant '$name'")
+            }
+
+            val result = evaluateExpression(
+                expression = constant.expression,
+                symbols = this,
+                lineNumber = constant.lineNumber,
+                resolvingConstants = resolvingConstants
+            )
+
+            resolvingConstants.remove(name)
+
+            return result
+        }
+    }
+
+    private inner class ExpressionParser(
+        private val value: String,
+        private val lineNumber: Int
+    ) {
+        private var index = 0
+
+        fun parse(): Expression {
+            val expression = parseSum()
+
+            skipWhitespace()
+
+            if (index != value.length) {
+                invalid()
+            }
+
+            return expression
+        }
+
+        private fun parseSum(): Expression {
+            var expression = parsePrimary()
+
+            while (true) {
+                expression = when {
+                    consume('+') -> Expression.Add(expression, parsePrimary())
+                    consume('-') -> Expression.Subtract(expression, parsePrimary())
+                    else -> return expression
+                }
+            }
+        }
+
+        private fun parsePrimary(): Expression {
+            skipWhitespace()
+
+            if (consume('-')) {
+                return Expression.Negate(parsePrimary())
+            }
+
+            if (consume('(')) {
+                val expression = parseSum()
+
+                if (!consume(')')) {
+                    invalid()
+                }
+
+                return expression
+            }
+
+            if (index == value.length) {
+                invalid()
+            }
+
+            val char = value[index]
+
+            return when {
+                char.isDigit() -> parseNumber()
+                char == '_' || char.isLetter() -> parseSymbol()
+                else -> invalid()
+            }
+        }
+
+        private fun parseNumber(): Expression {
+            val start = index
+
+            while (index < value.length && value[index].isLetterOrDigit()) {
+                index++
+            }
+
+            val token = value.substring(start, index)
+            val number = parseNumberLiteral(token)
+                ?: invalid()
+
+            return Expression.Number(number)
+        }
+
+        private fun parseSymbol(): Expression {
+            val start = index
+
+            while (
+                index < value.length &&
+                (value[index] == '_' || value[index].isLetterOrDigit())
+            ) {
+                index++
+            }
+
+            return Expression.Symbol(value.substring(start, index))
+        }
+
+        private fun consume(char: Char): Boolean {
+            skipWhitespace()
+
+            if (index < value.length && value[index] == char) {
+                index++
+                return true
+            }
+
+            return false
+        }
+
+        private fun skipWhitespace() {
+            while (index < value.length && value[index].isWhitespace()) {
+                index++
+            }
+        }
+
+        private fun invalid(): Nothing =
+            throw AssemblyException("Line $lineNumber: invalid expression '$value'")
+    }
+
+    private sealed interface Expression {
+        data class Number(val value: Int) : Expression
+        data class Symbol(val name: String) : Expression
+        data class Add(val left: Expression, val right: Expression) : Expression
+        data class Subtract(val left: Expression, val right: Expression) : Expression
+        data class Negate(val expression: Expression) : Expression
     }
 
     private sealed interface Statement {
@@ -305,16 +1032,44 @@ class Assembler {
             override val lineNumber: Int,
             val original: String
         ) : Statement
+
+        data class Directive(
+            val name: String,
+            val arguments: List<String>,
+            override val lineNumber: Int
+        ) : Statement
     }
+
+    private enum class DirectiveKind {
+        EQU,
+        ORG,
+        BYTE,
+        ASCII,
+        STRING
+    }
+
+    private data class ConstantDefinition(
+        val expression: Expression,
+        val lineNumber: Int
+    )
+
+    private data class IndexedMemoryExpression(
+        val base: Expression,
+        val indexRegister: Int
+    )
 
     private data class Encoding(
         val bytes: List<Int>,
-        val sourceLocations: Map<Int, SourceLocation>
+        val sourceLocations: Map<Int, SourceLocation>,
+        val initialMemory: Map<Int, Int>
     )
 
     companion object {
         private val LABEL_REGEX =
             Regex("""^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$""")
+
+        private val SYMBOL_REGEX =
+            Regex("""^[A-Za-z_][A-Za-z0-9_]*$""")
 
         private val REGISTER_REGEX =
             Regex("""^R([0-9]+)$""")
@@ -322,7 +1077,20 @@ class Assembler {
         private val MEMORY_ADDRESS_REGEX =
             Regex("""^\[(.+)]$""")
 
+        private const val ASCII_MAX = 0x7F
         private const val REGISTER_COUNT = Architecture.REGISTER_COUNT
+
+        private fun parseNumberLiteral(value: String): Int? =
+            when {
+                value.startsWith("0x", ignoreCase = true) ->
+                    value.drop(2).toIntOrNull(16)
+
+                value.startsWith("0b", ignoreCase = true) ->
+                    value.drop(2).toIntOrNull(2)
+
+                else ->
+                    value.toIntOrNull()
+            }
     }
 }
 

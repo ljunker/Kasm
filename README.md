@@ -64,8 +64,9 @@ two spaces to keep the control-flow structure easy to scan.
 
 The current language has four general-purpose 8-bit registers: `R0` through
 `R3`. Numeric operands may be decimal, hexadecimal with `0x`, or binary with
-`0b`. Arithmetic writes wrapped byte results, so incrementing stored value
-`255` produces `0`.
+`0b`; constants and labels can be combined with small `+`/`-` expressions.
+Arithmetic writes wrapped byte results, so incrementing stored value `255`
+produces `0`.
 
 Implemented instruction groups:
 
@@ -111,15 +112,18 @@ flag jumps; `JZ` and `JNZ` test a register value directly.
 
 ## Memory
 
-The VM keeps program bytecode separate from data memory. Data memory currently
-has 256 directly addressed 8-bit cells.
+The VM keeps program bytecode separate from data memory. Data memory has 256
+directly addressed 8-bit cells. Data directives can initialize named cells
+before the first instruction executes:
 
 ```kasm
-; Store two values in memory, swap them, then print both cells.
-  MOV R0, 4
-  MOV R1, 9
-  STORE [40], R0
-  STORE [41], R1
+; Initialize two named cells, swap them, then print both values.
+.org 40
+left:
+  .byte 4
+right:
+  .byte 9
+
   CALL swap
   CALL print
   HALT
@@ -127,24 +131,27 @@ has 256 directly addressed 8-bit cells.
 swap:
   PUSH R2
   PUSH R3
-  LOAD R2, [40]
-  LOAD R3, [41]
-  STORE [40], R3
-  STORE [41], R2
+  LOAD R2, [left]
+  LOAD R3, [right]
+  STORE [left], R3
+  STORE [right], R2
   POP R3
   POP R2
   RET
 
 print:
-  LOAD R0, [40]
+  LOAD R0, [left]
   PRINT R0
-  LOAD R0, [41]
+  LOAD R0, [right]
   PRINT R0
   RET
 ```
 
-`LOAD` and `STORE` currently use direct memory addresses such as `[40]`.
-Indirect address forms like `[R1]` are not implemented yet.
+`.equ`, `.org`, `.byte`, `.ascii`, and `.string` provide a small data layout
+language. Byte operands and direct memory addresses accept expressions such as
+`copy - source` and `[source + 1]`. `LOAD` and `STORE` also accept one-register
+indexed forms such as `[R2]`, `[name + R2]`, and `[R2 + 4]`, which is enough to
+iterate `.string` data until its zero terminator.
 
 ## Stack And Calls
 
@@ -276,12 +283,14 @@ location for it.
 
 ## Examples
 
-| Program                     | Demonstrates                     | Output          |
-|-----------------------------|----------------------------------|-----------------|
-| `examples/countdown.kasm`   | `DEC`, `JNZ`, loops              | `5` through `1` |
-| `examples/compare-max.kasm` | `CMP`, flags, register moves     | `21`            |
-| `examples/memory-swap.kasm` | direct memory access and calls   | `9`, then `4`   |
-| `examples/stack-calls.kasm` | nested calls and saved registers | `18`            |
+| Program                        | Demonstrates                                 | Output                 |
+|--------------------------------|----------------------------------------------|------------------------|
+| `examples/countdown.kasm`      | `DEC`, `JNZ`, loops                          | `5` through `1`        |
+| `examples/compare-max.kasm`    | `CMP`, flags, register moves                 | `21`                   |
+| `examples/memory-swap.kasm`    | named initialized memory and calls           | `9`, then `4`          |
+| `examples/memory-layout.kasm`  | `.equ`, `.org`, `.byte`, address expressions | `18`, then `16`        |
+| `examples/memory-strings.kasm` | `.string` and indexed string iteration       | `75`, `65`, `83`, `77` |
+| `examples/stack-calls.kasm`    | nested calls and saved registers             | `18`                   |
 
 Run any example by passing its source path to the CLI:
 
