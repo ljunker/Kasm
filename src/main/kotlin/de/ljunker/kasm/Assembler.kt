@@ -266,9 +266,10 @@ class Assembler {
                 "Line $lineNumber: unknown value or label '$value'"
             )
 
-        if (resolved !in 0..255) {
+        if (resolved !in Architecture.wordRange) {
             throw AssemblyException(
-                "Line $lineNumber: value '$value' resolves to $resolved, but only 0..255 is allowed"
+                "Line $lineNumber: value '$value' resolves to $resolved, but only " +
+                        "${Architecture.wordRange} is allowed"
             )
         }
 
@@ -321,7 +322,7 @@ class Assembler {
         private val MEMORY_ADDRESS_REGEX =
             Regex("""^\[(.+)]$""")
 
-        private const val REGISTER_COUNT = 4
+        private const val REGISTER_COUNT = Architecture.REGISTER_COUNT
     }
 }
 

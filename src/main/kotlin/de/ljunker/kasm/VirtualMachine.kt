@@ -11,6 +11,8 @@ class VirtualMachine(
     private var running: Boolean = false
     private var zeroFlag: Boolean = false
     private var signFlag: Boolean = false
+    private var carryFlag: Boolean = false
+    private var overflowFlag: Boolean = false
     private var stackPointer: Int = MEMORY_SIZE
 
     val instructionPointer: Int
@@ -27,6 +29,8 @@ class VirtualMachine(
         memory.fill(0)
         zeroFlag = false
         signFlag = false
+        carryFlag = false
+        overflowFlag = false
         stackPointer = MEMORY_SIZE
     }
 
@@ -71,37 +75,33 @@ class VirtualMachine(
                 val target = readRegister(program)
                 val source = readRegister(program)
 
-                registers[target] += registers[source]
-                updateResultFlags(registers[target])
+                addToRegister(target, registers[source])
             }
 
             Opcode.SUB -> {
                 val target = readRegister(program)
                 val source = readRegister(program)
 
-                registers[target] -= registers[source]
-                updateResultFlags(registers[target])
+                subtractFromRegister(target, registers[source])
             }
 
             Opcode.INC -> {
                 val register = readRegister(program)
 
-                registers[register]++
-                updateResultFlags(registers[register])
+                addToRegister(register, 1)
             }
 
             Opcode.DEC -> {
                 val register = readRegister(program)
 
-                registers[register]--
-                updateResultFlags(registers[register])
+                subtractFromRegister(register, 1)
             }
 
             Opcode.CMP -> {
                 val left = readRegister(program)
                 val right = readRegister(program)
 
-                updateResultFlags(registers[left] - registers[right])
+                updateSubtractionFlags(registers[left], registers[right])
             }
 
             Opcode.JMP -> {
@@ -147,7 +147,7 @@ class VirtualMachine(
             Opcode.JG -> {
                 val address = readByte(program)
 
-                if (!zeroFlag && !signFlag) {
+                if (!zeroFlag && signFlag == overflowFlag) {
                     jumpTo(program, address)
                 }
             }
@@ -155,7 +155,7 @@ class VirtualMachine(
             Opcode.JL -> {
                 val address = readByte(program)
 
-                if (signFlag) {
+                if (signFlag != overflowFlag) {
                     jumpTo(program, address)
                 }
             }
@@ -219,6 +219,8 @@ class VirtualMachine(
             stackPointer = stackPointer,
             zeroFlag = zeroFlag,
             signFlag = signFlag,
+            carryFlag = carryFlag,
+            overflowFlag = overflowFlag,
             running = running
         )
 
@@ -248,7 +250,7 @@ class VirtualMachine(
 
     private fun writeMemory(address: Int, value: Int) {
         ensureMemoryAddress(address)
-        memory[address] = value
+        memory[address] = Architecture.normalizeWord(value)
     }
 
     private fun ensureMemoryAddress(address: Int) {
@@ -260,6 +262,9 @@ class VirtualMachine(
     private fun push(value: Int) {
         if (stackPointer == 0) {
             throw VmException("Stack overflow")
+        }
+        if (value !in Architecture.wordRange) {
+            throw VmException("Stack value out of range: $value")
         }
 
         stackPointer--
@@ -274,9 +279,39 @@ class VirtualMachine(
         return memory[stackPointer++]
     }
 
+    private fun addToRegister(register: Int, value: Int) {
+        val left = registers[register]
+        val rawResult = left + value
+        val result = Architecture.normalizeWord(rawResult)
+
+        registers[register] = result
+        updateResultFlags(result)
+        carryFlag = rawResult > Architecture.WORD_MASK
+        overflowFlag = Architecture.hasSignBit(left) == Architecture.hasSignBit(value) &&
+                Architecture.hasSignBit(left) != Architecture.hasSignBit(result)
+    }
+
+    private fun subtractFromRegister(register: Int, value: Int) {
+        val left = registers[register]
+
+        registers[register] = updateSubtractionFlags(left, value)
+    }
+
+    private fun updateSubtractionFlags(left: Int, right: Int): Int {
+        val rawResult = left - right
+        val result = Architecture.normalizeWord(rawResult)
+
+        updateResultFlags(result)
+        carryFlag = rawResult < 0
+        overflowFlag = Architecture.hasSignBit(left) != Architecture.hasSignBit(right) &&
+                Architecture.hasSignBit(left) != Architecture.hasSignBit(result)
+
+        return result
+    }
+
     private fun updateResultFlags(result: Int) {
         zeroFlag = result == 0
-        signFlag = result < 0
+        signFlag = Architecture.hasSignBit(result)
     }
 
     private fun jumpTo(program: Program, address: Int) {
@@ -291,8 +326,8 @@ class VirtualMachine(
         "%02X".format(this)
 
     companion object {
-        private const val REGISTER_COUNT = 4
-        private const val MEMORY_SIZE = 256
+        private const val REGISTER_COUNT = Architecture.REGISTER_COUNT
+        private const val MEMORY_SIZE = Architecture.MEMORY_SIZE
     }
 }
 
@@ -303,6 +338,8 @@ data class VmSnapshot(
     val stackPointer: Int,
     val zeroFlag: Boolean,
     val signFlag: Boolean,
+    val carryFlag: Boolean,
+    val overflowFlag: Boolean,
     val running: Boolean
 )
 

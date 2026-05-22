@@ -48,18 +48,22 @@ Die Sprache kennt aktuell:
 Der aktuelle VM-Stand trifft bereits ein paar Architekturentscheidungen:
 
 - Bytecode-Operanden und Sprungziele werden als Werte von `0..255` kodiert.
-- Daten-Memory hat 256 Zellen.
+- Programmbilder passen in den 256-Byte-Adressraum.
+- Register und Daten-Memory-Zellen speichern 8-bit-Werte; Arithmetik wrappt
+  modulo 256.
+- Daten-Memory hat 256 8-bit-Zellen.
 - Programm-Bytecode und Daten-Memory sind getrennt.
 - Der Stack liegt im Daten-Memory und waechst von oben nach unten.
+- `SP` bleibt interner VM-Zustand und wird im Debugger gezeigt, nicht als
+  KASM-Register exponiert.
 - `CALL` legt die Ruecksprungadresse auf denselben Stack wie `PUSH`.
-- `CMP` veraendert keine Register, sondern setzt Zero- und Sign-Flag.
+- `R0` ist in der dokumentierten Call-Konvention primaerer Eingabe- und
+  Rueckgabewert; Callees sichern modifizierte `R1` bis `R3`.
+- `CMP` veraendert keine Register, sondern setzt Zero-, Sign-, Carry- und
+  Overflow-Flag.
 - `ADD`, `SUB`, `INC` und `DEC` aktualisieren dieselben Ergebnis-Flags.
-- `JE` und `JNE` lesen das Zero-Flag, `JG` und `JL` nutzen Zero- und Sign-Flag.
-
-Diese Entscheidungen reichen fuer kleine Programme gut aus. Vor groesseren
-Spracherweiterungen sollte aber klar festgelegt werden, ob Register dauerhaft
-unbeschraenkte Kotlin-`Int`-Werte behalten oder eine echte 8-bit- oder
-16-bit-Arithmetik mit Wraparound bekommen.
+- `JE` und `JNE` lesen das Zero-Flag; `JG` und `JL` sind signed Spruenge mit
+  Sign- und Overflow-Semantik.
 
 ### Beispiele
 
@@ -84,7 +88,10 @@ Die CLI kann Quellprogramme direkt ausfuehren und interaktiv debuggen:
 
 Der Assembler erzeugt dafuer bereits eine Source-Map zwischen Quellzeilen und
 Bytecode-Adressen. Breakpoints auf reinen Label-, Leer- oder Kommentarzeilen
-werden aktuell abgelehnt.
+werden aktuell abgelehnt. `DebugSession` kapselt Run/Step, Source-Breakpoints,
+typed Stop-Gruende und Snapshots headless; die CLI-REPL ist nur ein Adapter
+darueber. Damit kann ein IntelliJ-Plugin die Debugger-Steuerung benutzen, ohne
+Terminalausgabe parsen zu muessen.
 
 Der Entwicklungsstart ueber `./gradlew run` ist fuer Tests und Repo-Arbeit
 praktisch, soll aber nicht der normale Nutzerweg bleiben. `installDist` erzeugt
@@ -125,33 +132,24 @@ Der erste Absicherungsblock ist umgesetzt:
 Neue Features sollten diese Tests und die Referenz jeweils erweitern, statt die
 Absicherung spaeter nachzuholen.
 
-### 1. Architektursemantik festziehen
+### Abgeschlossen: Architektursemantik festziehen
 
 Memory, Stack und Flags machen KASM jetzt zu einer kleinen Maschine und nicht
-mehr nur zu einem Assembler-Spielzeug. Deshalb sollten die Maschinenregeln
-frueh explizit werden.
+mehr nur zu einem Assembler-Spielzeug. Der Maschinenstand ist jetzt explizit:
 
-- Registerbreite entscheiden:
-  - aktuelles `Int`-Verhalten beibehalten
-  - oder echte Byte-/Word-Arithmetik mit Wraparound einfuehren
-- Flag-Modell ausbauen oder bewusst klein halten:
-  - Zero-Flag
-  - Sign-Flag
-  - Carry-Flag fuer unsigned Arithmetik
-  - Overflow-Flag fuer signed Arithmetik
-- Sichtbarkeit des Stack Pointers entscheiden:
-  - interner VM-Zustand
-  - eigenes `SP`-Register
-  - oder spezielle Instruktionen fuer Stack-Inspektion
-- Call-Konvention beschreiben:
-  - welche Register ein Aufrufer sichern muss
-  - ob Rueckgabewerte konventionell in `R0` liegen
-  - wie verschachtelte Aufrufe und lokale Werte organisiert werden
+- Register, Daten-Memory und Programmadressen sind auf 8-bit-Werte
+  beziehungsweise 256 Adressen festgelegt.
+- Arithmetik wrappt; Zero, Sign, Carry und Overflow sind getestet und
+  dokumentiert.
+- `JG` und `JL` folgen signed Flag-Semantik an Byte-Grenzen.
+- `SP` bleibt intern und debugger-sichtbar.
+- Die dokumentierte Call-Konvention legt `R0` als primaeren Rueckgabewert und
+  `R1` bis `R3` als callee-preserved Register fest.
 
-Diese Entscheidungen beeinflussen spaeter `MUL`, `DIV`, weitere Spruenge,
+Diese Regeln sind Grundlage fuer `MUL`, `DIV`, weitere Spruenge,
 Assembler-Direktiven, Debugger und Disassembler.
 
-### 2. Memory im Assembler wirklich nutzbar machen
+### 1. Memory im Assembler wirklich nutzbar machen
 
 Direkte Adressen wie `[40]` reichen fuer erste Beispiele. Fuer laengere Programme
 braucht Memory aber Namen, Datenbereiche und kleine Ausdruecke.
@@ -176,7 +174,7 @@ braucht Memory aber Namen, Datenbereiche und kleine Ausdruecke.
 Danach werden `LOAD` und `STORE` deutlich lesbarer als Programme mit vielen
 hart kodierten Adressen.
 
-### 3. Instruktionssatz gezielt erweitern
+### 2. Instruktionssatz gezielt erweitern
 
 Neue Opcodes sollten dann zuerst Programme kuerzer oder klarer machen, die mit
 dem aktuellen Kern bereits moeglich sind.
@@ -198,15 +196,15 @@ dem aktuellen Kern bereits moeglich sind.
 - Weitere Flag-Spruenge:
   - `JGE`
   - `JLE`
-  - unsigned Varianten, falls Carry-Flag eingefuehrt wird
+  - unsigned Varianten auf Basis der bestehenden Carry-Semantik
 - Kleine Pseudo-Instruktionen:
   - `CLR R0`
   - `NOP`
 
-Bei `DIV`, Wraparound und Carry/Overflow sollte die Architekturentscheidung aus
-Phase 2 vorher stehen.
+Bei `DIV` muss noch festgelegt werden, wie Division durch null und Quotienten
+unter der bestehenden 8-bit-Semantik behandelt werden.
 
-### 4. Direkten CLI-Workflow ausbauen
+### 3. Direkten CLI-Workflow ausbauen
 
 Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
 werden, sollte zuerst der normale Aufruf ohne Gradle sauber werden und danach
@@ -239,16 +237,17 @@ das Bytecode- und Debugger-Tooling folgen.
 - VM-Debug-Hooks:
   - Trace-Ausgabe
   - Schrittlimit gegen Endlosschleifen
-- Debugger-Komfort:
+- Debugger-Komfort und Editor-Anbindung:
   - Breakpoints wieder loeschen
   - Source-Listing um die aktuelle Zeile
   - Memory-Fenster statt nur nichtleerer Zellen
   - Reset oder Neustart einer Debug-Session
+  - IntelliJ-Adapter fuer `DebugSession` mit Run/Step-Aktionen und Tool Window
 - Source Maps weiter nutzen:
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
   - spaeter optional im Bytecode-Format persistieren
 
-### 5. Parser und Diagnostik verbessern
+### 4. Parser und Diagnostik verbessern
 
 Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Direktiven,
 Ausdruecke, Strings und Makros werden mit strukturierterem Parsing deutlich
@@ -263,7 +262,7 @@ leichter.
   - erwarteter Operandentyp
 - Mehrere Fehler in einem Assembler-Lauf sammeln, wo das sinnvoll ist.
 
-### 6. Editor- und Sprachtooling nachziehen
+### 5. Editor- und Sprachtooling nachziehen
 
 Das TextMate-Highlighting ist ein guter Anfang. Sobald Syntax und Semantik
 stabiler sind, lohnt sich reichhaltigeres Tooling.
@@ -274,7 +273,7 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 - Completion und Hover-Dokumentation.
 - Spaeter Diagnostics oder ein kleiner Language Server.
 
-### 7. Groessere Sprachideen spaeter
+### 6. Groessere Sprachideen spaeter
 
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 

@@ -4,8 +4,11 @@ data class Program(
     val bytes: List<Int>
 ) {
     init {
-        require(bytes.all { it in 0..255 }) {
-            "Program bytes must be in range 0..255"
+        require(bytes.all { it in Architecture.wordRange }) {
+            "Program bytes must be in range ${Architecture.wordRange}"
+        }
+        require(bytes.size <= Architecture.ADDRESS_SPACE_SIZE) {
+            "Program size must not exceed ${Architecture.ADDRESS_SPACE_SIZE} bytes"
         }
     }
 

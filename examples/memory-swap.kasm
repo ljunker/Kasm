@@ -8,10 +8,14 @@
   HALT
 
 swap:
+  PUSH R2
+  PUSH R3
   LOAD R2, [40]
   LOAD R3, [41]
   STORE [40], R3
   STORE [41], R2
+  POP R3
+  POP R2
   RET
 
 print:

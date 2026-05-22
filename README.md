@@ -11,7 +11,7 @@ and a stack for function calls.
 - A bytecode VM with four general-purpose registers, result flags, data memory,
   stack operations, and call/return support.
 - A CLI that can run source programs and debug them with source-line
-  breakpoints.
+  breakpoints, backed by a headless debug session API.
 - Example programs for loops, comparisons, memory operations, and nested calls.
 - A TextMate grammar under `kasm-textmate` for editor syntax highlighting.
 
@@ -62,8 +62,10 @@ two spaces to keep the control-flow structure easy to scan.
 
 ## Language Snapshot
 
-The current language has four general-purpose registers: `R0` through `R3`.
-Numeric operands may be decimal, hexadecimal with `0x`, or binary with `0b`.
+The current language has four general-purpose 8-bit registers: `R0` through
+`R3`. Numeric operands may be decimal, hexadecimal with `0x`, or binary with
+`0b`. Arithmetic writes wrapped byte results, so incrementing stored value
+`255` produces `0`.
 
 Implemented instruction groups:
 
@@ -104,13 +106,13 @@ print_result:
   HALT
 ```
 
-The VM currently tracks Zero and Sign flags. Flag jumps use the most recent
-flagged result, while `JZ` and `JNZ` test a register value directly.
+The VM tracks Zero, Sign, Carry, and Overflow flags. `JG` and `JL` are signed
+flag jumps; `JZ` and `JNZ` test a register value directly.
 
 ## Memory
 
 The VM keeps program bytecode separate from data memory. Data memory currently
-has 256 directly addressed cells.
+has 256 directly addressed 8-bit cells.
 
 ```kasm
 ; Store two values in memory, swap them, then print both cells.
@@ -123,10 +125,14 @@ has 256 directly addressed cells.
   HALT
 
 swap:
+  PUSH R2
+  PUSH R3
   LOAD R2, [40]
   LOAD R3, [41]
   STORE [40], R3
   STORE [41], R2
+  POP R3
+  POP R2
   RET
 
 print:
@@ -170,7 +176,9 @@ double:
 ```
 
 The stack lives in data memory and grows downward from the high end of the
-256-cell memory space.
+256-cell memory space. The stack pointer is debugger-visible VM state, not a
+KASM register. The examples use `R0` for the primary input and return value;
+functions save and restore `R1` through `R3` when they modify them.
 
 ## Install The CLI
 
@@ -234,6 +242,37 @@ Useful debugger commands:
 When a breakpoint is hit, the debugger prints the next source instruction,
 instruction pointer, stack pointer, register values, flags, active stack cells,
 and non-zero memory cells outside the active stack.
+
+### Headless Debug Sessions
+
+The CLI debugger is an adapter over `DebugSession`. Editor tooling can assemble
+source with debug information, set source-line breakpoints, run or step without
+a terminal, and read typed stop results plus VM snapshots:
+
+```kotlin
+val debugProgram = Assembler().assembleWithDebugInfo(source)
+val session = DebugSession(debugProgram) { printedLine ->
+    console.print(printedLine)
+}
+
+session.setBreakpoint(5)
+
+when (val stop = session.run()) {
+    is DebugStop.BreakpointHit -> {
+        val vm = stop.snapshot.vm
+        val nextLine = stop.snapshot.nextLocation?.lineNumber
+        toolWindow.showState(vm, nextLine)
+    }
+    is DebugStop.Halted -> toolWindow.showHalted(stop.snapshot.vm)
+    is DebugStop.VmError -> toolWindow.showError(stop.error.message)
+    is DebugStop.Stepped -> toolWindow.showState(stop.snapshot.vm, null)
+}
+```
+
+`DebugSnapshot.vm` exposes the instruction pointer, stack pointer, flags,
+registers, complete memory, and running state. `DebugSnapshot.nextLocation`
+maps the next instruction back to its KASM source line when the source map has a
+location for it.
 
 ## Examples
 

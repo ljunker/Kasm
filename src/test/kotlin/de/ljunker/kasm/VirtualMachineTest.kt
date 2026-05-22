@@ -109,6 +109,81 @@ class VirtualMachineTest {
     }
 
     @Test
+    fun wrapsWordArithmeticAndSetsCarryFlags() {
+        val output = mutableListOf<String>()
+        val vm = VirtualMachine { line -> output += line }
+        val program = Assembler().assemble(
+            """
+            MOV R0, 255
+            INC R0
+            STORE [20], R0
+            PRINT R0
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(listOf("0"), output)
+        assertEquals(0, snapshot.registers[0])
+        assertEquals(0, snapshot.memory[20])
+        assertEquals(true, snapshot.zeroFlag)
+        assertEquals(false, snapshot.signFlag)
+        assertEquals(true, snapshot.carryFlag)
+        assertEquals(false, snapshot.overflowFlag)
+    }
+
+    @Test
+    fun marksSignedOverflowOnWordArithmetic() {
+        val vm = VirtualMachine()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 127
+            MOV R1, 1
+            ADD R0, R1
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(128, snapshot.registers[0])
+        assertEquals(false, snapshot.zeroFlag)
+        assertEquals(true, snapshot.signFlag)
+        assertEquals(false, snapshot.carryFlag)
+        assertEquals(true, snapshot.overflowFlag)
+    }
+
+    @Test
+    fun comparesWordValuesAsSignedForGreaterAndLessJumps() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 127
+            MOV R1, 255
+
+            CMP R0, R1
+            JG greater
+            JMP end
+
+            greater:
+            PRINT R0
+
+            end:
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("127"), output)
+    }
+
+    @Test
     fun rejectsStackUnderflow() {
         val exception = assertFailsWith<VmException> {
             VirtualMachine().run(
@@ -124,16 +199,13 @@ class VirtualMachineTest {
 
     @Test
     fun rejectsStackOverflow() {
-        val bytes = buildList {
-            repeat(257) {
-                add(Opcode.PUSH.code)
-                add(0)
-            }
-            add(Opcode.HALT.code)
-        }
-
         val exception = assertFailsWith<VmException> {
-            VirtualMachine().run(Program(bytes))
+            VirtualMachine().run(
+                Program.of(
+                    Opcode.PUSH.code, 0,
+                    Opcode.JMP.code, 0
+                )
+            )
         }
 
         assertEquals("Stack overflow", exception.message)

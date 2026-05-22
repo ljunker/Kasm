@@ -6,14 +6,12 @@ class Debugger(
     private val readCommand: () -> String?,
     private val output: (String) -> Unit = ::println
 ) {
-    private val vm = VirtualMachine(output)
-    private val breakpointsByAddress = mutableMapOf<Int, Int>()
-
-    private var stoppedAtBreakpoint = false
+    private val session = DebugSession(
+        debugProgram = debugProgram,
+        output = output
+    )
 
     fun run() {
-        vm.load(debugProgram.program)
-
         output("Debugging $sourceName")
         output("Commands: br <line>, run, step, state, breakpoints, help, quit")
         printState("Ready.")
@@ -83,87 +81,61 @@ class Debugger(
             return
         }
 
-        val address = debugProgram.sourceMap.addressForLine(lineNumber)
+        val breakpoint = session.setBreakpoint(lineNumber)
 
-        if (address == null) {
+        if (breakpoint == null) {
             output("Line $lineNumber has no executable instruction.")
             return
         }
 
-        breakpointsByAddress[address] = lineNumber
-        output("Breakpoint set at line $lineNumber (address $address).")
+        output("Breakpoint set at line ${breakpoint.lineNumber} (address ${breakpoint.address}).")
     }
 
     private fun continueUntilBreakpoint() {
-        if (!vm.isRunning) {
-            printState("Program is halted.")
-            return
+        when (val stop = session.run()) {
+            is DebugStop.BreakpointHit ->
+                printState("Breakpoint hit at line ${stop.breakpoint.lineNumber}.")
+
+            is DebugStop.Halted ->
+                printState("Program halted.")
+
+            is DebugStop.VmError ->
+                printState("VM error: ${stop.error.message}")
+
+            is DebugStop.Stepped ->
+                error("Run cannot stop after a single step without a reason")
         }
-
-        if (stoppedAtBreakpoint) {
-            stoppedAtBreakpoint = false
-
-            if (!stepVm()) {
-                return
-            }
-        }
-
-        while (vm.isRunning) {
-            val lineNumber = breakpointsByAddress[vm.instructionPointer]
-
-            if (lineNumber != null) {
-                stoppedAtBreakpoint = true
-                printState("Breakpoint hit at line $lineNumber.")
-                return
-            }
-
-            if (!stepVm()) {
-                return
-            }
-        }
-
-        printState("Program halted.")
     }
 
     private fun stepOnce() {
-        if (!vm.isRunning) {
-            printState("Program is halted.")
-            return
-        }
+        when (val stop = session.step()) {
+            is DebugStop.Stepped ->
+                printState("Stepped.")
 
-        stoppedAtBreakpoint = false
+            is DebugStop.Halted ->
+                printState("Program halted.")
 
-        if (!stepVm()) {
-            return
-        }
+            is DebugStop.VmError ->
+                printState("VM error: ${stop.error.message}")
 
-        if (vm.isRunning) {
-            printState("Stepped.")
-        } else {
-            printState("Program halted.")
+            is DebugStop.BreakpointHit ->
+                error("Step cannot stop before executing a breakpoint")
         }
     }
 
-    private fun stepVm(): Boolean =
-        try {
-            vm.step()
-            true
-        } catch (error: VmException) {
-            printState("VM error: ${error.message}")
-            false
-        }
-
     private fun printState(message: String) {
-        val snapshot = vm.snapshot()
+        val debugSnapshot = session.snapshot()
+        val snapshot = debugSnapshot.vm
 
         output(message)
         output(
             "IP=${snapshot.instructionPointer} SP=${snapshot.stackPointer} " +
                     "Status=${if (snapshot.running) "RUNNING" else "HALTED"} " +
-                    "Flags: Z=${bit(snapshot.zeroFlag)} S=${bit(snapshot.signFlag)}"
+                    "Flags: Z=${bit(snapshot.zeroFlag)} S=${bit(snapshot.signFlag)} " +
+                    "C=${bit(snapshot.carryFlag)} O=${bit(snapshot.overflowFlag)}"
         )
 
-        val location = debugProgram.sourceMap.locationForAddress(snapshot.instructionPointer)
+        val location = debugSnapshot.nextLocation
 
         when {
             !snapshot.running ->
@@ -214,15 +186,16 @@ class Debugger(
     }
 
     private fun printBreakpoints() {
-        if (breakpointsByAddress.isEmpty()) {
+        val lineBreakpoints = session.breakpoints()
+
+        if (lineBreakpoints.isEmpty()) {
             output("Breakpoints: none")
             return
         }
 
-        val breakpoints = breakpointsByAddress.entries
-            .sortedBy { (_, lineNumber) -> lineNumber }
-            .joinToString(separator = " ") { (address, lineNumber) ->
-                "line $lineNumber @ $address"
+        val breakpoints = lineBreakpoints
+            .joinToString(separator = " ") { breakpoint ->
+                "line ${breakpoint.lineNumber} @ ${breakpoint.address}"
             }
 
         output("Breakpoints: $breakpoints")
