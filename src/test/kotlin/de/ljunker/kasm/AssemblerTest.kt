@@ -1,5 +1,7 @@
 package de.ljunker.kasm
 
+import kotlin.io.path.createTempDirectory
+import kotlin.io.path.writeBytes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -265,6 +267,43 @@ class AssemblerTest {
                 43 to 'K'.code,
                 44 to '!'.code,
                 45 to 0
+            ),
+            program.initialMemory
+        )
+    }
+
+    @Test
+    fun embedsBinaryFilesRelativeToTheAssemblerBaseDirectory() {
+        val baseDirectory = createTempDirectory("kasm-incbin")
+        baseDirectory.resolve("blob.bin").writeBytes(byteArrayOf(0, 65, -1))
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .org 0x1234
+            blob:
+              .incbin "blob.bin"
+            blob_end:
+              .byte 0
+
+              LOAD R0, [blob + 2]
+              MOV R1, blob_end - blob
+              HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.LOAD.code, 0, 0x36, 0x12,
+                Opcode.MOV.code, 1, 3,
+                Opcode.HALT.code
+            ).bytes,
+            program.bytes
+        )
+        assertEquals(
+            mapOf(
+                0x1234 to 0,
+                0x1235 to 65,
+                0x1236 to 255,
+                0x1237 to 0
             ),
             program.initialMemory
         )

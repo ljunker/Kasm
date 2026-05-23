@@ -149,10 +149,12 @@ print:
   RET
 ```
 
-`.equ`, `.org`, `.byte`, `.ascii`, and `.string` provide a small data layout
-language. Byte operands and direct memory addresses accept expressions such as
-`copy - source` and `[source + 1]`. Direct memory addresses, jump targets, and
-`.org` use 16-bit addresses, so data can live above address `255`.
+`.equ`, `.org`, `.byte`, `.ascii`, `.string`, and `.incbin` provide a small data
+layout language. Byte operands and direct memory addresses accept expressions
+such as `copy - source` and `[source + 1]`. Direct memory addresses, jump
+targets, and `.org` use 16-bit addresses, so data can live above address `255`.
+`.incbin "path"` embeds raw file bytes at assembly time; relative paths are
+resolved from the source file's directory in the CLI.
 
 `LOAD` and `STORE` also accept one-register indexed forms such as `[R2]`,
 `[name + R2]`, and `[R2 + 4]`, plus address-register pointer forms such as
@@ -314,6 +316,7 @@ location for it.
 | `examples/memory-layout.kasm`  | `.equ`, `.org`, `.byte`, address expressions | `18`, then `16`        |
 | `examples/memory-strings.kasm` | `.string` and indexed string iteration       | `75`, `65`, `83`, `77` |
 | `examples/ascii-print.kasm`    | `A0`, high memory, and `PRINTC`              | `KASM`                 |
+| `examples/incbin-print.kasm`   | `.incbin` file data and `PRINTC`             | `INCBIN`               |
 | `examples/aoc-2025-day1-sample.kasm` | parsing ASCII data with `CALL`/`RET`  | `3`                    |
 | `examples/stack-calls.kasm`    | nested calls and saved registers             | `18`                   |
 

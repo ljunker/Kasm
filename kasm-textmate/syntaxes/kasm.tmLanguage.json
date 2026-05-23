@@ -73,7 +73,7 @@
       "patterns": [
         {
           "name": "keyword.directive.kasm",
-          "match": "(?i:\\.EQU|\\.ORG|\\.BYTE|\\.ASCII|\\.STRING)\\b"
+          "match": "(?i:\\.EQU|\\.ORG|\\.BYTE|\\.ASCII|\\.STRING|\\.INCBIN)\\b"
         }
       ]
     },

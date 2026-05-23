@@ -18,7 +18,7 @@ fun main(args: Array<String>) {
 private fun runFile(sourcePath: Path) {
     val source = sourcePath.readText()
 
-    val program = Assembler().assemble(source)
+    val program = Assembler(baseDirectory = sourcePath.baseDirectory()).assemble(source)
 
     println("Bytecode:")
     println(program.hexDump())
@@ -30,7 +30,7 @@ private fun runFile(sourcePath: Path) {
 
 private fun debugFile(sourcePath: Path) {
     val source = sourcePath.readText()
-    val debugProgram = Assembler().assembleWithDebugInfo(source)
+    val debugProgram = Assembler(baseDirectory = sourcePath.baseDirectory()).assembleWithDebugInfo(source)
 
     Debugger(
         debugProgram = debugProgram,
@@ -48,3 +48,6 @@ private fun printUsage() {
     println("  kasm <file.kasm>")
     println("  kasm debug <file.kasm>")
 }
+
+private fun Path.baseDirectory(): Path =
+    parent ?: Path.of(".")

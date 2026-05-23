@@ -10,7 +10,7 @@ class ExampleProgramGoldenTest {
     @Test
     fun examplesHaveStableBytecode() {
         for (example in examples) {
-            val program = Assembler().assemble(example.source())
+            val program = Assembler(baseDirectory = EXAMPLES_DIRECTORY).assemble(example.source())
 
             assertEquals(example.hexDump, program.hexDump(), example.fileName)
         }
@@ -20,7 +20,7 @@ class ExampleProgramGoldenTest {
     fun examplesHaveStableOutput() {
         for (example in examples) {
             val output = mutableListOf<String>()
-            val program = Assembler().assemble(example.source())
+            val program = Assembler(baseDirectory = EXAMPLES_DIRECTORY).assemble(example.source())
 
             VirtualMachine { line -> output += line }.run(program)
 
@@ -38,6 +38,8 @@ class ExampleProgramGoldenTest {
     }
 
     private companion object {
+        val EXAMPLES_DIRECTORY: Path = Path.of("examples")
+
         val examples = listOf(
             Example(
                 fileName = "countdown.kasm",
@@ -72,6 +74,11 @@ class ExampleProgramGoldenTest {
                 fileName = "ascii-print.kasm",
                 hexDump = "27 00 00 12 2B 00 00 05 00 12 00 26 00 29 00 04 04 00 FF",
                 output = listOf("K", "A", "S", "M", "\n")
+            ),
+            Example(
+                fileName = "incbin-print.kasm",
+                hexDump = "27 00 00 14 2B 00 00 05 00 12 00 26 00 29 00 04 04 00 FF",
+                output = listOf("I", "N", "C", "B", "I", "N", "\n")
             ),
             Example(
                 fileName = "aoc-2025-day1-sample.kasm",

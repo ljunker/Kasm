@@ -13,7 +13,7 @@ Die Sprache kennt aktuell:
 - Labels und `;`-Kommentare.
 - Dezimale, hexadezimale und binaere Zahlenliterale.
 - Konstanten, Datenlayout und kleine Ausdruecke:
-  - `.equ`, `.org`, `.byte`, `.ascii`, `.string`
+  - `.equ`, `.org`, `.byte`, `.ascii`, `.string`, `.incbin`
   - `end - start`
   - `[buffer + 1]`
 - Vier allgemeine Register: `R0` bis `R3`.
@@ -107,6 +107,7 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
   Adressausdruecke.
 - `examples/memory-strings.kasm` zeigt `.string` und indizierte String-Iteration.
 - `examples/ascii-print.kasm` zeigt `A0`, high memory und `PRINTC`.
+- `examples/incbin-print.kasm` zeigt `.incbin` mit dateibasierten Rohbytes.
 - `examples/aoc-2025-day1-sample.kasm` zeigt einen kleinen ASCII-Parser mit
   `CALL`/`RET` fuer Advent of Code 2025 Day 1.
 - `examples/stack-calls.kasm` zeigt verschachtelte `CALL`/`RET` und gesicherte Register.
@@ -204,9 +205,8 @@ aufzugeben:
 - `examples/ascii-print.kasm` und `examples/aoc-2025-day1-sample.kasm`
   demonstrieren High-Memory-Strings und Pointer-Iteration.
 
-Offen bleibt echtes Host-Datei-I/O: Programme koennen jetzt grosse
-Speicherbereiche adressieren, aber die CLI kann noch keine externe Datei in
-einen Memory-Bereich laden.
+Programme koennen jetzt grosse Speicherbereiche adressieren; `.incbin` macht
+externe Rohdaten als initialisiertes Daten-Memory nutzbar.
 
 ### Abgeschlossen: Memory im Assembler wirklich nutzbar machen
 
@@ -216,6 +216,7 @@ hat der Assembler jetzt Namen, Datenbereiche und kleine Ausdruecke:
 - `.equ` definiert Konstanten.
 - `.org` bewegt den Cursor fuer das initiale Daten-Memory-Bild.
 - `.byte`, `.ascii` und `.string` initialisieren benannte Datenzellen.
+- `.incbin` bettet externe Rohbytes relativ zur Quelldatei ein.
 - Datenlabels werden als direkte Memory-Adressen benutzt, Code-Labels bleiben
   Bytecode-Adressen.
 - Operanden und Datenwerte verstehen kleine `+`/`-`-Ausdruecke wie
@@ -244,25 +245,22 @@ dem aktuellen Kern bereits moeglich sind. Dieser Block ist umgesetzt:
 Unsigned Vergleichsspruenge auf Basis des Carry-Flags bleiben eine moegliche
 spaetere Ergaenzung, wenn Programme sie wirklich brauchen.
 
-### 1. Datei-I/O fuer Programme nutzbar machen
+### Abgeschlossen: Datei-I/O per `.incbin` nutzbar machen
 
 Der 16-bit-Adressraum macht groessere Eingaben sinnvoll, aber noch nicht
-bequem. Als naechster Schritt sollte die CLI externe Dateien in Daten-Memory
-laden koennen.
+bequem. Die reproduzierbare Assembler-Variante ist umgesetzt:
 
-- CLI-Loader:
-  - `kasm run program.kasm --load input.txt:0x2000`
-  - Datei bytesweise in Daten-Memory schreiben
-  - Bereichsfehler melden, wenn die Datei nicht mehr in `0..65535` passt
-  - optional Nullterminator anhaengen fuer textbasierte Parser
-- Debugger-Unterstuetzung:
-  - dieselben Loader-Optionen fuer `kasm debug`
-  - Memory-Fenster ab einer Adresse anzeigen
-- Spaeter moegliche Sprachebene:
-  - `.incbin "input.txt"` fuer reproduzierbare Assemblierung
-  - `.include` fuer Quellmodule, nicht fuer Rohdaten
+- `.incbin "path"` liest Rohbytes beim Assemblieren ein.
+- Relative Pfade werden im CLI relativ zur Quelldatei aufgeloest.
+- Eingebettete Bytes landen im initialen Daten-Memory ab dem aktuellen
+  `.org`-Cursor.
+- `.incbin` haengt bewusst keinen Nullterminator an; Programme koennen danach
+  explizit `.byte 0` setzen.
+- Bereichsfehler werden ueber die bestehende Datenrange-Pruefung abgefangen.
+- `examples/incbin-print.kasm` zeigt Datei-Daten plus Pointer-Iteration mit
+  `A0` und `PRINTC`.
 
-### 2. Direkten CLI-Workflow ausbauen
+### 1. Direkten CLI-Workflow ausbauen
 
 Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
 werden, sollte zuerst der normale Aufruf ohne Gradle sauber werden und danach
@@ -305,7 +303,7 @@ das Bytecode- und Debugger-Tooling folgen.
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
   - spaeter optional im Bytecode-Format persistieren
 
-### 3. Parser und Diagnostik verbessern
+### 2. Parser und Diagnostik verbessern
 
 Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Die neuen
 Direktiven, Ausdruecke und Strings machen eine sauberere Parser-Grenze jetzt
@@ -320,7 +318,7 @@ nuetzlicher; Makros wuerden ohne sie schnell unhandlich.
   - erwarteter Operandentyp
 - Mehrere Fehler in einem Assembler-Lauf sammeln, wo das sinnvoll ist.
 
-### 4. Editor- und Sprachtooling nachziehen
+### 3. Editor- und Sprachtooling nachziehen
 
 Das TextMate-Highlighting ist ein guter Anfang. Sobald Syntax und Semantik
 stabiler sind, lohnt sich reichhaltigeres Tooling.
@@ -331,11 +329,15 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 - Completion und Hover-Dokumentation.
 - Spaeter Diagnostics oder ein kleiner Language Server.
 
-### 5. Groessere Sprachideen spaeter
+### 4. Groessere Sprachideen spaeter
 
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 
 - Makros und `.include`.
+- Optionaler Laufzeit-Dateiloader:
+  - `kasm run program.kasm --load input.txt:0x2000`
+  - dieselben Loader-Optionen fuer `kasm debug`
+  - optional Nullterminator anhaengen fuer textbasierte Parser
 - Pseudo-Instruktionen mit Expansion im Assembler.
 - Komplexere Adressierung mit mehr als einem Laufzeitregister, falls reale
   Beispiele sie brauchen.
