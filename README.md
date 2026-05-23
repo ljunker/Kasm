@@ -70,14 +70,15 @@ produces `0`.
 
 Implemented instruction groups:
 
-| Area                  | Instructions                   |
-|-----------------------|--------------------------------|
-| Data movement         | `MOV`, `LOAD`, `STORE`         |
-| Arithmetic            | `ADD`, `SUB`, `INC`, `DEC`     |
-| Comparisons and flags | `CMP`, `JE`, `JNE`, `JG`, `JL` |
-| Register-based jumps  | `JMP`, `JZ`, `JNZ`             |
-| Stack and calls       | `PUSH`, `POP`, `CALL`, `RET`   |
-| Output and stop       | `PRINT`, `HALT`                |
+| Area                  | Instructions                                      |
+|-----------------------|---------------------------------------------------|
+| Data movement         | `MOV`, `LOAD`, `STORE`, `CLR`                     |
+| Arithmetic            | `ADD`, `ADDI`, `SUB`, `SUBI`, `INC`, `DEC`, `MUL`, `DIV`, `MOD`, `NEG` |
+| Bit operations        | `AND`, `OR`, `XOR`, `NOT`                         |
+| Comparisons and flags | `CMP`, `JE`, `JNE`, `JG`, `JGE`, `JL`, `JLE`      |
+| Register-based jumps  | `JMP`, `JZ`, `JNZ`                                |
+| Stack and calls       | `PUSH`, `POP`, `CALL`, `RET`                      |
+| Output and stop       | `PRINT`, `NOP`, `HALT`                            |
 
 The [language reference](docs/language-reference.md) describes the operand
 forms, instruction effects, flag rules, memory model, and stack behavior in more

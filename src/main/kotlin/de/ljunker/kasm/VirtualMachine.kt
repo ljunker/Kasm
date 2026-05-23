@@ -240,11 +240,14 @@ class VirtualMachine(
                 val target = readRegister(program)
                 val source = readRegister(program)
 
-                val result = registers[target] * registers[source]
-                registers[target] = Architecture.normalizeWord(result)
+                val unsignedResult = registers[target] * registers[source]
+                val signedResult = Architecture.toSignedWord(registers[target]) *
+                        Architecture.toSignedWord(registers[source])
+
+                registers[target] = Architecture.normalizeWord(unsignedResult)
                 updateResultFlags(registers[target])
-                carryFlag = result > Architecture.WORD_MASK
-                overflowFlag = Architecture.hasSignBit(registers[target]) != Architecture.hasSignBit(result)
+                carryFlag = unsignedResult > Architecture.WORD_MASK
+                overflowFlag = signedResult !in SIGNED_WORD_RANGE
             }
 
             Opcode.DIV -> {
@@ -258,6 +261,7 @@ class VirtualMachine(
                 val result = registers[target] / registers[source]
                 registers[target] = Architecture.normalizeWord(result)
                 updateResultFlags(registers[target])
+                clearCarryOverflowFlags()
             }
 
             Opcode.MOD -> {
@@ -271,16 +275,18 @@ class VirtualMachine(
                 val result = registers[target] % registers[source]
                 registers[target] = Architecture.normalizeWord(result)
                 updateResultFlags(registers[target])
+                clearCarryOverflowFlags()
             }
 
             Opcode.NEG -> {
                 val register = readRegister(program)
+                val original = registers[register]
 
-                val result = -registers[register]
+                val result = -original
                 registers[register] = Architecture.normalizeWord(result)
                 updateResultFlags(registers[register])
-                carryFlag = result < 0
-                overflowFlag = result != 0 && result != -registers[register]
+                carryFlag = original != 0
+                overflowFlag = original == Architecture.WORD_SIGN_BIT
             }
 
             Opcode.AND -> {
@@ -290,6 +296,7 @@ class VirtualMachine(
                 val result = registers[target] and registers[source]
                 registers[target] = Architecture.normalizeWord(result)
                 updateResultFlags(registers[target])
+                clearCarryOverflowFlags()
             }
 
             Opcode.OR -> {
@@ -299,6 +306,7 @@ class VirtualMachine(
                 val result = registers[target] or registers[source]
                 registers[target] = Architecture.normalizeWord(result)
                 updateResultFlags(registers[target])
+                clearCarryOverflowFlags()
             }
 
             Opcode.XOR -> {
@@ -308,6 +316,7 @@ class VirtualMachine(
                 val result = registers[target] xor registers[source]
                 registers[target] = Architecture.normalizeWord(result)
                 updateResultFlags(registers[target])
+                clearCarryOverflowFlags()
             }
 
             Opcode.NOT -> {
@@ -316,6 +325,7 @@ class VirtualMachine(
                 val result = registers[register].inv() and Architecture.WORD_MASK
                 registers[register] = Architecture.normalizeWord(result)
                 updateResultFlags(registers[register])
+                clearCarryOverflowFlags()
             }
 
             Opcode.JGE -> {
@@ -338,6 +348,8 @@ class VirtualMachine(
                 val register = readRegister(program)
 
                 registers[register] = 0
+                updateResultFlags(registers[register])
+                clearCarryOverflowFlags()
             }
 
             Opcode.NOP -> {
@@ -458,6 +470,11 @@ class VirtualMachine(
         signFlag = Architecture.hasSignBit(result)
     }
 
+    private fun clearCarryOverflowFlags() {
+        carryFlag = false
+        overflowFlag = false
+    }
+
     private fun jumpTo(program: Program, address: Int) {
         if (address !in 0 until program.size) {
             throw VmException("Jump target out of bounds: $address")
@@ -472,6 +489,7 @@ class VirtualMachine(
     companion object {
         private const val REGISTER_COUNT = Architecture.REGISTER_COUNT
         private const val MEMORY_SIZE = Architecture.MEMORY_SIZE
+        private val SIGNED_WORD_RANGE = -Architecture.WORD_SIGN_BIT until Architecture.WORD_SIGN_BIT
     }
 }
 

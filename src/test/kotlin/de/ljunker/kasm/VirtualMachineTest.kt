@@ -311,6 +311,51 @@ class VirtualMachineTest {
     }
 
     @Test
+    fun multiplicationSetsUnsignedCarryAndSignedOverflowFlags() {
+        val vm = VirtualMachine()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 127
+            MOV R1, 2
+            MUL R0, R1
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(254, snapshot.registers[0])
+        assertEquals(false, snapshot.carryFlag)
+        assertEquals(true, snapshot.overflowFlag)
+    }
+
+    @Test
+    fun divisionModuloAndBitwiseOperationsClearCarryAndOverflowFlags() {
+        val vm = VirtualMachine()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 255
+            INC R0
+            MOV R0, 8
+            MOV R1, 2
+            DIV R0, R1
+            AND R0, R1
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(0, snapshot.registers[0])
+        assertEquals(false, snapshot.carryFlag)
+        assertEquals(false, snapshot.overflowFlag)
+    }
+
+    @Test
     fun negation() {
         val output = mutableListOf<String>()
         val program = Assembler().assemble(
@@ -327,6 +372,26 @@ class VirtualMachineTest {
         VirtualMachine { line -> output += line }.run(program)
 
         assertEquals(listOf("251", "5"), output)
+    }
+
+    @Test
+    fun negationMarksTheSignedMinimumOverflowCase() {
+        val vm = VirtualMachine()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 128
+            NEG R0
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(128, snapshot.registers[0])
+        assertEquals(true, snapshot.carryFlag)
+        assertEquals(true, snapshot.overflowFlag)
     }
 
     @Test
@@ -421,6 +486,29 @@ class VirtualMachineTest {
         VirtualMachine { line -> output += line }.run(program)
 
         assertEquals(listOf("0"), output)
+    }
+
+    @Test
+    fun clearUpdatesResultFlagsAndClearsCarryAndOverflowFlags() {
+        val vm = VirtualMachine()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 255
+            INC R0
+            CLR R0
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(0, snapshot.registers[0])
+        assertEquals(true, snapshot.zeroFlag)
+        assertEquals(false, snapshot.signFlag)
+        assertEquals(false, snapshot.carryFlag)
+        assertEquals(false, snapshot.overflowFlag)
     }
 
     @Test

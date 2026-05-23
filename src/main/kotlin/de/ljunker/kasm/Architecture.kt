@@ -17,4 +17,14 @@ object Architecture {
 
     fun hasSignBit(value: Int): Boolean =
         normalizeWord(value) and WORD_SIGN_BIT != 0
+
+    fun toSignedWord(value: Int): Int {
+        val normalized = normalizeWord(value)
+
+        return if (hasSignBit(normalized)) {
+            normalized - ADDRESS_SPACE_SIZE
+        } else {
+            normalized
+        }
+    }
 }

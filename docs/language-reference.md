@@ -113,23 +113,37 @@ operation. In that interpretation the same stored byte range represents
 | `MOV`       | `register, byte-value`     | Copy a value into a register.                            |
 | `MOV`       | `register, register`       | Copy one register into another register.                 |
 | `ADD`       | `register, register`       | Add into the target register with an 8-bit wrapped result. |
+| `ADDI`      | `register, byte-value`     | Add an immediate byte value into the target register.    |
 | `SUB`       | `register, register`       | Subtract into the target register with an 8-bit wrapped result. |
+| `SUBI`      | `register, byte-value`     | Subtract an immediate byte value from the target register. |
 | `INC`       | `register`                 | Increment one register with an 8-bit wrapped result.     |
 | `DEC`       | `register`                 | Decrement one register with an 8-bit wrapped result.     |
+| `MUL`       | `register, register`       | Multiply into the target register with an 8-bit wrapped result. |
+| `DIV`       | `register, register`       | Divide the target register by the source register.       |
+| `MOD`       | `register, register`       | Store the target modulo the source register.             |
+| `NEG`       | `register`                 | Two's-complement negate one register.                    |
+| `AND`       | `register, register`       | Bitwise AND into the target register.                    |
+| `OR`        | `register, register`       | Bitwise OR into the target register.                     |
+| `XOR`       | `register, register`       | Bitwise XOR into the target register.                    |
+| `NOT`       | `register`                 | Bitwise invert one register.                             |
 | `CMP`       | `register, register`       | Compare two registers by updating result flags.          |
 | `JMP`       | `jump-target`              | Jump unconditionally.                                    |
 | `JZ`        | `register, jump-target`    | Jump when the register value is zero.                    |
 | `JNZ`       | `register, jump-target`    | Jump when the register value is non-zero.                |
 | `JE`        | `jump-target`              | Jump when the Zero flag is set.                          |
 | `JNE`       | `jump-target`              | Jump when the Zero flag is clear.                        |
-| `JG`        | `jump-target`              | Signed jump when the last flagged result was greater than zero. |
-| `JL`        | `jump-target`              | Signed jump when the last flagged result was less than zero. |
+| `JG`        | `jump-target`              | Signed jump when the last comparison was greater.        |
+| `JGE`       | `jump-target`              | Signed jump when the last comparison was greater or equal. |
+| `JL`        | `jump-target`              | Signed jump when the last comparison was less.           |
+| `JLE`       | `jump-target`              | Signed jump when the last comparison was less or equal.  |
 | `LOAD`      | `register, memory-address` | Load one data-memory cell into a register.               |
 | `STORE`     | `memory-address, register` | Store a register value into one data-memory cell.        |
 | `PUSH`      | `register`                 | Push a register value on the stack.                      |
 | `POP`       | `register`                 | Pop the stack top into a register.                       |
 | `CALL`      | `jump-target`              | Push the return address and jump to a function.          |
 | `RET`       | none                       | Pop a return address and jump back to it.                |
+| `CLR`       | `register`                 | Clear one register to zero.                              |
+| `NOP`       | none                       | Do nothing.                                              |
 | `PRINT`     | `register`                 | Print the register value as one output line.             |
 | `HALT`      | none                       | Stop the VM.                                             |
 
@@ -145,12 +159,19 @@ The VM exposes four result flags:
 | Overflow | The signed 8-bit result overflowed `-128..127`. |
 
 `CMP left, right` computes the flags from `left - right` without changing either
-register. `ADD`, `SUB`, `INC`, and `DEC` also update the same result flags.
+register. `ADD`, `ADDI`, `SUB`, `SUBI`, `INC`, and `DEC` update the same
+addition/subtraction flags. `MUL` stores the wrapped unsigned-byte product,
+sets Carry when the unsigned product exceeds `255`, and sets Overflow when the
+signed product does not fit in `-128..127`.
 
-`JE` and `JNE` test the Zero flag. `JG` and `JL` are signed comparisons: `JG`
-jumps when Zero is clear and Sign equals Overflow; `JL` jumps when Sign differs
-from Overflow. `JZ` and `JNZ` are separate register-value tests and do not
-depend on the result flags.
+`DIV` and `MOD` use the stored unsigned byte values and reject a zero divisor
+with a VM error. Successful `DIV`, `MOD`, `AND`, `OR`, `XOR`, `NOT`, and `CLR`
+update Zero and Sign, and clear Carry and Overflow. `NEG` sets Carry when the
+input was non-zero and sets Overflow when negating stored value `128`.
+
+`JE` and `JNE` test the Zero flag. `JG`, `JGE`, `JL`, and `JLE` are signed
+comparisons based on Zero, Sign, and Overflow. `JZ` and `JNZ` are separate
+register-value tests and do not depend on the result flags.
 
 ## Memory
 

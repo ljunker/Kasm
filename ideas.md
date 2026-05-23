@@ -22,9 +22,20 @@ Die Sprache kennt aktuell:
   - `MOV R0, R1`
 - Arithmetik:
   - `ADD`
+  - `ADDI`
   - `SUB`
+  - `SUBI`
   - `INC`
   - `DEC`
+  - `MUL`
+  - `DIV`
+  - `MOD`
+  - `NEG`
+- Bit-Operationen:
+  - `AND`
+  - `OR`
+  - `XOR`
+  - `NOT`
 - Kontrollfluss ueber Register:
   - `JMP`
   - `JZ`
@@ -34,7 +45,9 @@ Die Sprache kennt aktuell:
   - `JE`
   - `JNE`
   - `JG`
+  - `JGE`
   - `JL`
+  - `JLE`
 - Direkten Daten-Memory-Zugriff:
   - `LOAD R0, [40]`
   - `STORE [40], R0`
@@ -45,6 +58,8 @@ Die Sprache kennt aktuell:
   - `CALL`
   - `RET`
 - Ausgabe und Programmende:
+  - `CLR`
+  - `NOP`
   - `PRINT`
   - `HALT`
 
@@ -67,8 +82,10 @@ Der aktuelle VM-Stand trifft bereits ein paar Architekturentscheidungen:
 - `CMP` veraendert keine Register, sondern setzt Zero-, Sign-, Carry- und
   Overflow-Flag.
 - `ADD`, `SUB`, `INC` und `DEC` aktualisieren dieselben Ergebnis-Flags.
-- `JE` und `JNE` lesen das Zero-Flag; `JG` und `JL` sind signed Spruenge mit
-  Sign- und Overflow-Semantik.
+- `ADDI`, `SUBI`, `MUL`, `DIV`, `MOD`, `NEG` sowie die Bit-Operationen sind
+  Teil des aktuellen Instruktionssatzes.
+- `JE` und `JNE` lesen das Zero-Flag; `JG`, `JGE`, `JL` und `JLE` sind signed
+  Spruenge mit Sign- und Overflow-Semantik.
 
 ### Beispiele
 
@@ -176,37 +193,24 @@ hat der Assembler jetzt Namen, Datenbereiche und kleine Ausdruecke:
 `.word` bleibt bewusst offen: In der aktuellen 8-bit-Architektur ist ein
 gespeichertes Word genau eine Zelle, also deckt `.byte` den Bedarf sauberer ab.
 
-### 1. Instruktionssatz gezielt erweitern
+### Abgeschlossen: Instruktionssatz gezielt erweitern
 
 Neue Opcodes sollten dann zuerst Programme kuerzer oder klarer machen, die mit
-dem aktuellen Kern bereits moeglich sind.
+dem aktuellen Kern bereits moeglich sind. Dieser Block ist umgesetzt:
 
-- Immediate-Arithmetik:
-  - `ADDI R0, 5`
-  - `SUBI R0, 1`
-- Weitere Arithmetik:
-  - `MUL`
-  - `DIV`
-  - `MOD`
-  - `NEG`
-- Bit-Operationen:
-  - `AND`
-  - `OR`
-  - `XOR`
-  - `NOT`
-  - Shifts
-- Weitere Flag-Spruenge:
-  - `JGE`
-  - `JLE`
-  - unsigned Varianten auf Basis der bestehenden Carry-Semantik
-- Kleine Pseudo-Instruktionen:
-  - `CLR R0`
-  - `NOP`
+- Immediate-Arithmetik: `ADDI`, `SUBI`.
+- Weitere Arithmetik: `MUL`, `DIV`, `MOD`, `NEG`.
+- Bit-Operationen: `AND`, `OR`, `XOR`, `NOT`.
+- Weitere signed Flag-Spruenge: `JGE`, `JLE`.
+- Kleine Einfachheitsinstruktionen: `CLR`, `NOP`.
+- `DIV` und `MOD` werfen bei Divisor `0` einen VM-Fehler.
+- `MUL`, `NEG`, `DIV`, `MOD`, Bit-Operationen und `CLR` haben dokumentierte
+  Flag-Semantik.
 
-Bei `DIV` muss noch festgelegt werden, wie Division durch null und Quotienten
-unter der bestehenden 8-bit-Semantik behandelt werden.
+Unsigned Vergleichsspruenge auf Basis des Carry-Flags bleiben eine moegliche
+spaetere Ergaenzung, wenn Programme sie wirklich brauchen.
 
-### 2. Direkten CLI-Workflow ausbauen
+### 1. Direkten CLI-Workflow ausbauen
 
 Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
 werden, sollte zuerst der normale Aufruf ohne Gradle sauber werden und danach
@@ -249,7 +253,7 @@ das Bytecode- und Debugger-Tooling folgen.
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
   - spaeter optional im Bytecode-Format persistieren
 
-### 3. Parser und Diagnostik verbessern
+### 2. Parser und Diagnostik verbessern
 
 Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Die neuen
 Direktiven, Ausdruecke und Strings machen eine sauberere Parser-Grenze jetzt
@@ -264,7 +268,7 @@ nuetzlicher; Makros wuerden ohne sie schnell unhandlich.
   - erwarteter Operandentyp
 - Mehrere Fehler in einem Assembler-Lauf sammeln, wo das sinnvoll ist.
 
-### 4. Editor- und Sprachtooling nachziehen
+### 3. Editor- und Sprachtooling nachziehen
 
 Das TextMate-Highlighting ist ein guter Anfang. Sobald Syntax und Semantik
 stabiler sind, lohnt sich reichhaltigeres Tooling.
@@ -275,7 +279,7 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 - Completion und Hover-Dokumentation.
 - Spaeter Diagnostics oder ein kleiner Language Server.
 
-### 5. Groessere Sprachideen spaeter
+### 4. Groessere Sprachideen spaeter
 
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 
