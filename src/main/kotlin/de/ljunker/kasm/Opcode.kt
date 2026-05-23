@@ -28,6 +28,20 @@ enum class Opcode(
     RET(0x15, "RET"),
     LOAD_INDEXED(0x16, "LOAD", OperandType.REGISTER, OperandType.INDEXED_MEMORY_ADDRESS),
     STORE_INDEXED(0x17, "STORE", OperandType.INDEXED_MEMORY_ADDRESS, OperandType.REGISTER),
+    ADDI(0x18, "ADDI", OperandType.REGISTER, OperandType.BYTE_VALUE),
+    SUBI(0x19, "SUBI", OperandType.REGISTER, OperandType.BYTE_VALUE),
+    MUL(0x1A, "MUL", OperandType.REGISTER, OperandType.REGISTER),
+    DIV(0x1B, "DIV", OperandType.REGISTER, OperandType.REGISTER),
+    MOD(0x1C, "MOD", OperandType.REGISTER, OperandType.REGISTER),
+    NEG(0x1D, "NEG", OperandType.REGISTER),
+    AND(0x1E, "AND", OperandType.REGISTER, OperandType.REGISTER),
+    OR(0x1F, "OR", OperandType.REGISTER, OperandType.REGISTER),
+    XOR(0x20, "XOR", OperandType.REGISTER, OperandType.REGISTER),
+    NOT(0x21, "NOT", OperandType.REGISTER),
+    JGE(0x22, "JGE", OperandType.JUMP_TARGET),
+    JLE(0x23, "JLE", OperandType.JUMP_TARGET),
+    CLR(0x24, "CLR", OperandType.REGISTER),
+    NOP(0x25, "NOP"),
     HALT(0xFF, "HALT");
 
     val operandTypes: List<OperandType> = operandTypes.toList()

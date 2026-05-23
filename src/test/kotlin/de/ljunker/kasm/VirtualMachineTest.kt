@@ -268,4 +268,176 @@ class VirtualMachineTest {
 
         assertEquals("Jump target out of bounds: 42", exception.message)
     }
+
+    @Test
+    fun immediateArithmetic() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 5
+            ADDI R0, 3
+            PRINT R0
+            SUBI R0, 2
+            PRINT R0
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("8", "6"), output)
+    }
+
+    @Test
+    fun multiplicationAndDivision() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 6
+            MOV R1, 4
+            MUL R0, R1
+            PRINT R0
+            DIV R0, R1
+            PRINT R0
+            MOD R0, R1
+            PRINT R0
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("24", "6", "2"), output)
+    }
+
+    @Test
+    fun negation() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 5
+            NEG R0
+            PRINT R0
+            NEG R0
+            PRINT R0
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("251", "5"), output)
+    }
+
+    @Test
+    fun bitwiseOperations() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R2, 15
+            MOV R1, 7
+            MOV R0, R2
+            AND R0, R1
+            PRINT R0
+            MOV R0, R2
+            OR R0, R1
+            PRINT R0
+            MOV R0, R2
+            XOR R0, R1
+            PRINT R0
+            NOT R0
+            PRINT R0
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("7", "15", "8", "247"), output)
+    }
+
+    @Test
+    fun signedComparisonJumps() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 127
+            MOV R1, 255
+
+            CMP R0, R1
+            JGE greater_equal
+            JMP end
+
+            greater_equal:
+            PRINT R0
+
+            end:
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("127"), output)
+    }
+
+    @Test
+    fun unsignedComparisonJumps() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 255
+            MOV R1, 128
+
+            CMP R0, R1
+            JG greater
+            JMP end
+
+            greater:
+            PRINT R0
+
+            end:
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("255"), output)
+    }
+
+    @Test
+    fun clearsRegisters() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 5
+            CLR R0
+            PRINT R0
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("0"), output)
+    }
+
+    @Test
+    fun noOperation() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 5
+            NOP
+            NOP
+            PRINT R0
+            HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("5"), output)
+    }
 }

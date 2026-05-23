@@ -357,7 +357,10 @@ class Assembler {
         bytes: MutableList<Int>
     ) {
         when (opcode) {
-            Opcode.MOV -> {
+            Opcode.MOV,
+            Opcode.ADDI,
+            Opcode.SUBI,
+                -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
             }
@@ -369,18 +372,20 @@ class Assembler {
 
             Opcode.ADD,
             Opcode.SUB,
-            Opcode.CMP -> {
+            Opcode.CMP,
+            Opcode.MUL,
+            Opcode.DIV,
+            Opcode.MOD,
+            Opcode.AND,
+            Opcode.OR,
+            Opcode.XOR,
+            Opcode.NEG,
+            Opcode.NOT,
+            Opcode.CLR -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
-            }
-
-            Opcode.INC,
-            Opcode.DEC -> {
-                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-            }
-
-            Opcode.JMP -> {
-                bytes += parseByteExpression(statement.arguments[0], symbols, statement.lineNumber)
+                if (statement.arguments.size > 1) {
+                    bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+                }
             }
 
             Opcode.JZ,
@@ -388,11 +393,13 @@ class Assembler {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
             }
-
             Opcode.JE,
             Opcode.JNE,
             Opcode.JG,
             Opcode.JL,
+            Opcode.JGE,
+            Opcode.JLE,
+            Opcode.JMP,
             Opcode.CALL -> {
                 bytes += parseByteExpression(statement.arguments[0], symbols, statement.lineNumber)
             }
@@ -428,7 +435,9 @@ class Assembler {
             }
 
             Opcode.PUSH,
-            Opcode.POP -> {
+            Opcode.POP,
+            Opcode.INC,
+            Opcode.DEC -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
             }
 
@@ -437,7 +446,8 @@ class Assembler {
             }
 
             Opcode.RET,
-            Opcode.HALT -> {
+            Opcode.HALT,
+            Opcode.NOP -> {
                 // no operands
             }
         }

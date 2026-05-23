@@ -222,6 +222,128 @@ class VirtualMachine(
                 output(registers[register].toString())
             }
 
+            Opcode.ADDI -> {
+                val register = readRegister(program)
+                val value = readByte(program)
+
+                addToRegister(register, value)
+            }
+
+            Opcode.SUBI -> {
+                val register = readRegister(program)
+                val value = readByte(program)
+
+                subtractFromRegister(register, value)
+            }
+
+            Opcode.MUL -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                val result = registers[target] * registers[source]
+                registers[target] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[target])
+                carryFlag = result > Architecture.WORD_MASK
+                overflowFlag = Architecture.hasSignBit(registers[target]) != Architecture.hasSignBit(result)
+            }
+
+            Opcode.DIV -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                if (registers[source] == 0) {
+                    throw VmException("Division by zero")
+                }
+
+                val result = registers[target] / registers[source]
+                registers[target] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[target])
+            }
+
+            Opcode.MOD -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                if (registers[source] == 0) {
+                    throw VmException("Modulo by zero")
+                }
+
+                val result = registers[target] % registers[source]
+                registers[target] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[target])
+            }
+
+            Opcode.NEG -> {
+                val register = readRegister(program)
+
+                val result = -registers[register]
+                registers[register] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[register])
+                carryFlag = result < 0
+                overflowFlag = result != 0 && result != -registers[register]
+            }
+
+            Opcode.AND -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                val result = registers[target] and registers[source]
+                registers[target] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[target])
+            }
+
+            Opcode.OR -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                val result = registers[target] or registers[source]
+                registers[target] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[target])
+            }
+
+            Opcode.XOR -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                val result = registers[target] xor registers[source]
+                registers[target] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[target])
+            }
+
+            Opcode.NOT -> {
+                val register = readRegister(program)
+
+                val result = registers[register].inv() and Architecture.WORD_MASK
+                registers[register] = Architecture.normalizeWord(result)
+                updateResultFlags(registers[register])
+            }
+
+            Opcode.JGE -> {
+                val address = readByte(program)
+
+                if (zeroFlag || signFlag == overflowFlag) {
+                    jumpTo(program, address)
+                }
+            }
+
+            Opcode.JLE -> {
+                val address = readByte(program)
+
+                if (zeroFlag || signFlag != overflowFlag) {
+                    jumpTo(program, address)
+                }
+            }
+
+            Opcode.CLR -> {
+                val register = readRegister(program)
+
+                registers[register] = 0
+            }
+
+            Opcode.NOP -> {
+                // No operation
+            }
+
             Opcode.HALT -> {
                 running = false
             }
