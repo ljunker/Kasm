@@ -1,0 +1,14 @@
+; Print a zero-terminated string from high memory as ASCII characters.
+  .org 0x1200
+message:
+  .string "KASM\n"
+
+  MOVA A0, message
+loop:
+  LOAD R0, [A0]
+  JZ R0, end
+  PRINTC R0
+  INCA A0
+  JMP loop
+end:
+  HALT

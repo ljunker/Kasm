@@ -12,7 +12,7 @@ class ProgramTest {
             Program(List(Architecture.ADDRESS_SPACE_SIZE + 1) { Opcode.HALT.code })
         }
 
-        assertEquals("Program size must not exceed 256 bytes", exception.message)
+        assertEquals("Program size must not exceed 65536 bytes", exception.message)
     }
 
     @Test
@@ -25,7 +25,7 @@ class ProgramTest {
         }
 
         assertEquals(
-            "Initial memory addresses must be in range 0 until 256",
+            "Initial memory addresses must be in range 0 until 65536",
             exception.message
         )
     }

@@ -1,0 +1,112 @@
+; Advent of Code 2025 Day 1, part 1 sample.
+; Parse embedded rotations from high memory and count stops on position 0.
+  .equ ZERO, 48
+  .equ TEN, 10
+  .equ DIAL_SIZE, 100
+  .equ LEFT, 76
+
+  .org 0x2000
+input:
+  .ascii "L68\n"
+  .ascii "L30\n"
+  .ascii "R48\n"
+  .ascii "L5\n"
+  .ascii "R60\n"
+  .ascii "L55\n"
+  .ascii "L1\n"
+  .ascii "L99\n"
+  .ascii "R14\n"
+  .ascii "L82\n"
+  .byte 0
+
+direction:
+  .byte 0
+number:
+  .byte 0
+dial:
+  .byte 50
+zero_count:
+  .byte 0
+
+  MOVA A0, input
+
+next_rotation:
+  LOAD R0, [A0]
+  JZ R0, done
+  CALL read_rotation
+  CALL apply_rotation
+  CALL count_if_zero
+  JMP next_rotation
+
+done:
+  LOAD R0, [zero_count]
+  PRINT R0
+  HALT
+
+read_rotation:
+  LOAD R0, [A0]
+  STORE [direction], R0
+  INCA A0
+  CLR R1
+  STORE [number], R1
+
+read_digits:
+  LOAD R0, [A0]
+  JZ R0, read_rotation_done
+  MOV R2, TEN
+  CMP R0, R2
+  JE read_rotation_newline
+
+  MOV R2, ZERO
+  SUB R0, R2
+  LOAD R1, [number]
+  MOV R2, TEN
+  MUL R1, R2
+  ADD R1, R0
+  MOV R2, DIAL_SIZE
+  MOD R1, R2
+  STORE [number], R1
+  INCA A0
+  JMP read_digits
+
+read_rotation_newline:
+  INCA A0
+
+read_rotation_done:
+  RET
+
+apply_rotation:
+  LOAD R0, [direction]
+  MOV R2, LEFT
+  CMP R0, R2
+  JE rotate_left
+
+rotate_right:
+  LOAD R0, [dial]
+  LOAD R1, [number]
+  ADD R0, R1
+  MOV R2, DIAL_SIZE
+  MOD R0, R2
+  STORE [dial], R0
+  RET
+
+rotate_left:
+  LOAD R0, [dial]
+  LOAD R1, [number]
+  CMP R0, R1
+  JGE left_no_wrap
+  ADDI R0, DIAL_SIZE
+left_no_wrap:
+  SUB R0, R1
+  STORE [dial], R0
+  RET
+
+count_if_zero:
+  LOAD R0, [dial]
+  JNZ R0, count_done
+  LOAD R1, [zero_count]
+  INC R1
+  STORE [zero_count], R1
+
+count_done:
+  RET

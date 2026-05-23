@@ -41,6 +41,7 @@ class AssemblerTest {
         assertEquals(
             Program.of(
                 0x08, 0, 0,
+                0,
                 0xFF
             ),
             program
@@ -66,12 +67,12 @@ class AssemblerTest {
         assertEquals(
             Program.of(
                 0x0B, 0, 1,
-                0x0C, 17,
-                0x10, 2, 20,
-                0x11, 21, 2,
+                0x0C, 21, 0,
+                0x10, 2, 20, 0,
+                0x11, 21, 0, 2,
                 0x12, 2,
                 0x13, 3,
-                0x14, 17,
+                0x14, 21, 0,
                 0x15
             ),
             program
@@ -93,9 +94,69 @@ class AssemblerTest {
         assertEquals(
             Program.of(
                 Opcode.MOV.code, 1, 1,
-                Opcode.LOAD_INDEXED.code, 0, 40, 1,
-                Opcode.STORE_INDEXED.code, 60, 1, 0,
-                Opcode.LOAD_INDEXED.code, 2, 0, 3,
+                Opcode.LOAD_INDEXED.code, 0, 40, 0, 1,
+                Opcode.STORE_INDEXED.code, 60, 0, 1, 0,
+                Opcode.LOAD_INDEXED.code, 2, 0, 0, 3,
+                Opcode.HALT.code
+            ),
+            program
+        )
+    }
+
+    @Test
+    fun assemblesWideMemoryAndJumpAddresses() {
+        val program = Assembler().assemble(
+            """
+            .org 0x1234
+            item:
+              .byte 7
+
+              LOAD R0, [item]
+              STORE [item + 1], R0
+              JMP done
+            done:
+              HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program(
+                bytes = listOf(
+                    Opcode.LOAD.code, 0, 0x34, 0x12,
+                    Opcode.STORE.code, 0x35, 0x12, 0,
+                    Opcode.JMP.code, 11, 0,
+                    Opcode.HALT.code
+                ),
+                initialMemory = mapOf(0x1234 to 7)
+            ),
+            program
+        )
+    }
+
+    @Test
+    fun assemblesAddressRegisterInstructions() {
+        val program = Assembler().assemble(
+            """
+            MOVA A0, 0x1234
+            MOVA A1, A0
+            LOAD R0, [A1]
+            STORE [A0], R0
+            INCA A0
+            DECA A1
+            PRINTC R0
+            HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.MOVA.code, 0, 0x34, 0x12,
+                Opcode.MOVA_REGISTER.code, 1, 0,
+                Opcode.LOAD_ADDRESS_REGISTER.code, 0, 1,
+                Opcode.STORE_ADDRESS_REGISTER.code, 0, 0,
+                Opcode.INCA.code, 0,
+                Opcode.DECA.code, 1,
+                Opcode.PRINTC.code, 0,
                 Opcode.HALT.code
             ),
             program
@@ -114,11 +175,11 @@ class AssemblerTest {
     @Test
     fun rejectsOutOfRangeMemoryAddresses() {
         val exception = assertFailsWith<AssemblyException> {
-            Assembler().assemble("STORE [300], R0")
+            Assembler().assemble("STORE [70000], R0")
         }
 
         assertEquals(
-            "Line 1: value '300' resolves to 300, but only 0..255 is allowed",
+            "Line 1: address '70000' resolves to 70000, but only 0..65535 is allowed",
             exception.message
         )
     }
@@ -190,7 +251,7 @@ class AssemblerTest {
 
         assertEquals(
             Program.of(
-                Opcode.LOAD.code, 0, 41,
+                Opcode.LOAD.code, 0, 41, 0,
                 Opcode.MOV.code, 1, 2,
                 Opcode.HALT.code
             ).bytes,

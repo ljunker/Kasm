@@ -139,6 +139,66 @@ class VirtualMachineTest {
     }
 
     @Test
+    fun loadsAndStoresWideMemoryAddresses() {
+        val output = mutableListOf<String>()
+        val program = Assembler().assemble(
+            """
+            .org 0x1234
+            value:
+              .byte 42
+            copy:
+              .byte 0
+
+              LOAD R0, [value]
+              STORE [copy], R0
+              LOAD R1, [copy]
+              PRINT R1
+              HALT
+            """.trimIndent()
+        )
+
+        VirtualMachine { line -> output += line }.run(program)
+
+        assertEquals(listOf("42"), output)
+    }
+
+    @Test
+    fun iteratesWideMemoryWithAddressRegistersAndPrintsCharacters() {
+        val outputLines = mutableListOf<String>()
+        val outputText = StringBuilder()
+        val program = Assembler().assemble(
+            """
+            .org 0x1200
+            text:
+              .string "KASM\n"
+
+              MOVA A0, text
+            loop:
+              LOAD R0, [A0]
+              JZ R0, end
+              PRINTC R0
+              INCA A0
+              JMP loop
+            end:
+              HALT
+            """.trimIndent()
+        )
+
+        val vm = VirtualMachine(
+            outputLine = { line -> outputLines += line },
+            outputText = { text -> outputText.append(text) }
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(emptyList(), outputLines)
+        assertEquals("KASM\n", outputText.toString())
+        assertEquals(0x1205, snapshot.addressRegisters[0])
+    }
+
+    @Test
     fun wrapsWordArithmeticAndSetsCarryFlags() {
         val output = mutableListOf<String>()
         val vm = VirtualMachine { line -> output += line }
@@ -232,8 +292,7 @@ class VirtualMachineTest {
         val exception = assertFailsWith<VmException> {
             VirtualMachine().run(
                 Program.of(
-                    Opcode.PUSH.code, 0,
-                    Opcode.JMP.code, 0
+                    Opcode.CALL.code, 0, 0
                 )
             )
         }
@@ -246,7 +305,7 @@ class VirtualMachineTest {
         val exception = assertFailsWith<VmException> {
             VirtualMachine().run(
                 Program.of(
-                    Opcode.JMP.code, 42,
+                    Opcode.JMP.code, 42, 0,
                     Opcode.HALT.code
                 )
             )
@@ -260,7 +319,7 @@ class VirtualMachineTest {
         val exception = assertFailsWith<VmException> {
             VirtualMachine().run(
                 Program.of(
-                    Opcode.CALL.code, 42,
+                    Opcode.CALL.code, 42, 0,
                     Opcode.HALT.code
                 )
             )
@@ -527,5 +586,22 @@ class VirtualMachineTest {
         VirtualMachine { line -> output += line }.run(program)
 
         assertEquals(listOf("5"), output)
+    }
+
+    @Test
+    fun rejectsNonAsciiCharacterOutput() {
+        val exception = assertFailsWith<VmException> {
+            VirtualMachine().run(
+                Assembler().assemble(
+                    """
+                    MOV R0, 255
+                    PRINTC R0
+                    HALT
+                    """.trimIndent()
+                )
+            )
+        }
+
+        assertEquals("PRINTC value is not ASCII: 255", exception.message)
     }
 }

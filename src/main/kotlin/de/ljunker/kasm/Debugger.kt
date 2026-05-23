@@ -153,6 +153,11 @@ class Debugger(
                 .mapIndexed { register, value -> "R$register=$value" }
                 .joinToString(prefix = "Registers: ", separator = " ")
         )
+        output(
+            snapshot.addressRegisters
+                .mapIndexed { register, value -> "A$register=${formatAddressValue(value)}" }
+                .joinToString(prefix = "Address registers: ", separator = " ")
+        )
         output(formatStack(snapshot))
         output(formatMemory(snapshot))
     }
@@ -214,5 +219,8 @@ class Debugger(
         if (value) 1 else 0
 
     private fun formatAddress(address: Int): String =
-        "[%03d]".format(address)
+        "[${formatAddressValue(address)}]"
+
+    private fun formatAddressValue(address: Int): String =
+        "0x%04X".format(address)
 }

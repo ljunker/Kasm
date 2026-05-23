@@ -172,7 +172,7 @@ class Assembler {
                         DirectiveKind.EQU -> Unit
 
                         DirectiveKind.ORG ->
-                            dataAddress = parseByteExpression(
+                            dataAddress = parseAddressExpression(
                                 value = statement.arguments[0],
                                 symbols = symbols,
                                 lineNumber = statement.lineNumber
@@ -274,10 +274,10 @@ class Assembler {
 
         val endAddress = startAddress + size - 1
 
-        if (startAddress !in Architecture.wordRange || endAddress !in Architecture.wordRange) {
+        if (startAddress !in Architecture.addressRange || endAddress !in Architecture.addressRange) {
             throw AssemblyException(
                 "Line ${statement.lineNumber}: ${statement.name.lowercase()} data range " +
-                        "$startAddress..$endAddress is outside ${Architecture.wordRange}"
+                        "$startAddress..$endAddress is outside ${Architecture.addressRange}"
             )
         }
     }
@@ -318,7 +318,7 @@ class Assembler {
                         DirectiveKind.EQU -> Unit
 
                         DirectiveKind.ORG ->
-                            dataAddress = parseByteExpression(
+                            dataAddress = parseAddressExpression(
                                 value = statement.arguments[0],
                                 symbols = symbols,
                                 lineNumber = statement.lineNumber
@@ -359,8 +359,7 @@ class Assembler {
         when (opcode) {
             Opcode.MOV,
             Opcode.ADDI,
-            Opcode.SUBI,
-                -> {
+            Opcode.SUBI -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
             }
@@ -368,6 +367,19 @@ class Assembler {
             Opcode.MOV_REGISTER -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.MOVA -> {
+                bytes += parseAddressRegister(statement.arguments[0], statement.lineNumber)
+                encodeAddress(
+                    address = parseAddressExpression(statement.arguments[1], symbols, statement.lineNumber),
+                    bytes = bytes
+                )
+            }
+
+            Opcode.MOVA_REGISTER -> {
+                bytes += parseAddressRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseAddressRegister(statement.arguments[1], statement.lineNumber)
             }
 
             Opcode.ADD,
@@ -391,7 +403,10 @@ class Assembler {
             Opcode.JZ,
             Opcode.JNZ -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
+                encodeAddress(
+                    address = parseAddressExpression(statement.arguments[1], symbols, statement.lineNumber),
+                    bytes = bytes
+                )
             }
             Opcode.JE,
             Opcode.JNE,
@@ -401,16 +416,25 @@ class Assembler {
             Opcode.JLE,
             Opcode.JMP,
             Opcode.CALL -> {
-                bytes += parseByteExpression(statement.arguments[0], symbols, statement.lineNumber)
+                encodeAddress(
+                    address = parseAddressExpression(statement.arguments[0], symbols, statement.lineNumber),
+                    bytes = bytes
+                )
             }
 
             Opcode.LOAD -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
-                bytes += parseDirectMemoryAddress(statement.arguments[1], symbols, statement.lineNumber)
+                encodeAddress(
+                    address = parseDirectMemoryAddress(statement.arguments[1], symbols, statement.lineNumber),
+                    bytes = bytes
+                )
             }
 
             Opcode.STORE -> {
-                bytes += parseDirectMemoryAddress(statement.arguments[0], symbols, statement.lineNumber)
+                encodeAddress(
+                    address = parseDirectMemoryAddress(statement.arguments[0], symbols, statement.lineNumber),
+                    bytes = bytes
+                )
                 bytes += parseRegister(statement.arguments[1], statement.lineNumber)
             }
 
@@ -434,6 +458,16 @@ class Assembler {
                 bytes += parseRegister(statement.arguments[1], statement.lineNumber)
             }
 
+            Opcode.LOAD_ADDRESS_REGISTER -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseAddressRegisterMemoryAddress(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.STORE_ADDRESS_REGISTER -> {
+                bytes += parseAddressRegisterMemoryAddress(statement.arguments[0], statement.lineNumber)
+                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
             Opcode.PUSH,
             Opcode.POP,
             Opcode.INC,
@@ -441,7 +475,13 @@ class Assembler {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
             }
 
-            Opcode.PRINT -> {
+            Opcode.INCA,
+            Opcode.DECA -> {
+                bytes += parseAddressRegister(statement.arguments[0], statement.lineNumber)
+            }
+
+            Opcode.PRINT,
+            Opcode.PRINTC -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
             }
 
@@ -491,6 +531,11 @@ class Assembler {
                 )
             }
         }
+    }
+
+    private fun encodeAddress(address: Int, bytes: MutableList<Int>) {
+        bytes += address and Architecture.WORD_MASK
+        bytes += (address ushr Architecture.WORD_BITS) and Architecture.WORD_MASK
     }
 
     private fun directiveKind(statement: Statement.Directive): DirectiveKind =
@@ -559,6 +604,29 @@ class Assembler {
         }
 
         if (
+            opcode == Opcode.MOVA &&
+            statement.arguments.getOrNull(1)?.let(::isAddressRegister) == true
+        ) {
+            return Opcode.MOVA_REGISTER
+        }
+
+        if (
+            opcode == Opcode.LOAD &&
+            statement.arguments.getOrNull(1)
+                ?.let { isAddressRegisterMemoryAddress(it, statement.lineNumber) } == true
+        ) {
+            return Opcode.LOAD_ADDRESS_REGISTER
+        }
+
+        if (
+            opcode == Opcode.STORE &&
+            statement.arguments.getOrNull(0)
+                ?.let { isAddressRegisterMemoryAddress(it, statement.lineNumber) } == true
+        ) {
+            return Opcode.STORE_ADDRESS_REGISTER
+        }
+
+        if (
             opcode == Opcode.LOAD &&
             statement.arguments.getOrNull(1)
                 ?.let { isIndexedMemoryAddress(it, statement.lineNumber) } == true
@@ -592,6 +660,16 @@ class Assembler {
     private fun isRegister(value: String): Boolean =
         REGISTER_REGEX.matchEntire(value.uppercase()) != null
 
+    private fun isAddressRegister(value: String): Boolean =
+        ADDRESS_REGISTER_REGEX.matchEntire(value.uppercase()) != null
+
+    private fun isAddressRegisterMemoryAddress(value: String, lineNumber: Int): Boolean {
+        val expression = parseMemoryExpression(value, lineNumber)
+            ?: return false
+
+        return expression is Expression.Symbol && isAddressRegister(expression.name)
+    }
+
     private fun isIndexedMemoryAddress(value: String, lineNumber: Int): Boolean {
         val expression = parseMemoryExpression(value, lineNumber)
             ?: return false
@@ -612,7 +690,7 @@ class Assembler {
             throw AssemblyException("Line $lineNumber: indexed memory address '$value' is expected")
         }
 
-        return parseByteExpression(expressionValue, expression, symbols, lineNumber)
+        return parseAddressExpression(expressionValue, expression, symbols, lineNumber)
     }
 
     private fun encodeIndexedMemoryAddress(
@@ -626,8 +704,22 @@ class Assembler {
         val indexed = splitIndexedMemoryExpression(expression, value, lineNumber)
             ?: throw AssemblyException("Line $lineNumber: indexed memory address '$value' is expected")
 
-        bytes += parseByteExpression(value, indexed.base, symbols, lineNumber)
+        encodeAddress(
+            address = parseAddressExpression(value, indexed.base, symbols, lineNumber),
+            bytes = bytes
+        )
         bytes += indexed.indexRegister
+    }
+
+    private fun parseAddressRegisterMemoryAddress(value: String, lineNumber: Int): Int {
+        val expression = parseMemoryExpression(value, lineNumber)
+            ?: throwMemoryAddressSyntax(value, lineNumber)
+
+        if (expression !is Expression.Symbol || !isAddressRegister(expression.name)) {
+            throw AssemblyException("Line $lineNumber: address-register memory address '$value' is expected")
+        }
+
+        return parseAddressRegister(expression.name, lineNumber)
     }
 
     private fun parseMemoryExpression(value: String, lineNumber: Int): Expression? {
@@ -762,6 +854,23 @@ class Assembler {
         return register
     }
 
+    private fun parseAddressRegister(value: String, lineNumber: Int): Int {
+        val match = ADDRESS_REGISTER_REGEX.matchEntire(value.uppercase())
+            ?: throw AssemblyException(
+                "Line $lineNumber: invalid address register '$value'"
+            )
+
+        val register = match.groupValues[1].toInt()
+
+        if (register !in 0 until ADDRESS_REGISTER_COUNT) {
+            throw AssemblyException(
+                "Line $lineNumber: address register '$value' is out of range"
+            )
+        }
+
+        return register
+    }
+
     private fun parseByteExpression(
         value: String,
         symbols: Symbols,
@@ -784,6 +893,34 @@ class Assembler {
             throw AssemblyException(
                 "Line $lineNumber: value '$value' resolves to $resolved, but only " +
                         "${Architecture.wordRange} is allowed"
+            )
+        }
+
+        return resolved
+    }
+
+    private fun parseAddressExpression(
+        value: String,
+        symbols: Symbols,
+        lineNumber: Int
+    ): Int {
+        val expression = parseExpression(value, lineNumber)
+
+        return parseAddressExpression(value, expression, symbols, lineNumber)
+    }
+
+    private fun parseAddressExpression(
+        value: String,
+        expression: Expression,
+        symbols: Symbols,
+        lineNumber: Int
+    ): Int {
+        val resolved = evaluateExpression(expression, symbols, lineNumber)
+
+        if (resolved !in Architecture.addressRange) {
+            throw AssemblyException(
+                "Line $lineNumber: address '$value' resolves to $resolved, but only " +
+                        "${Architecture.addressRange} is allowed"
             )
         }
 
@@ -1084,11 +1221,15 @@ class Assembler {
         private val REGISTER_REGEX =
             Regex("""^R([0-9]+)$""")
 
+        private val ADDRESS_REGISTER_REGEX =
+            Regex("""^A([0-9]+)$""")
+
         private val MEMORY_ADDRESS_REGEX =
             Regex("""^\[(.+)]$""")
 
         private const val ASCII_MAX = 0x7F
         private const val REGISTER_COUNT = Architecture.REGISTER_COUNT
+        private const val ADDRESS_REGISTER_COUNT = Architecture.ADDRESS_REGISTER_COUNT
 
         private fun parseNumberLiteral(value: String): Int? =
             when {

@@ -63,22 +63,23 @@ two spaces to keep the control-flow structure easy to scan.
 ## Language Snapshot
 
 The current language has four general-purpose 8-bit registers: `R0` through
-`R3`. Numeric operands may be decimal, hexadecimal with `0x`, or binary with
-`0b`; constants and labels can be combined with small `+`/`-` expressions.
-Arithmetic writes wrapped byte results, so incrementing stored value `255`
-produces `0`.
+`R3`, plus two 16-bit address registers: `A0` and `A1`. Numeric operands may be
+decimal, hexadecimal with `0x`, or binary with `0b`; constants and labels can be
+combined with small `+`/`-` expressions. Arithmetic on byte registers writes
+wrapped byte results, so incrementing stored value `255` produces `0`.
 
 Implemented instruction groups:
 
 | Area                  | Instructions                                      |
 |-----------------------|---------------------------------------------------|
-| Data movement         | `MOV`, `LOAD`, `STORE`, `CLR`                     |
+| Data movement         | `MOV`, `MOVA`, `LOAD`, `STORE`, `CLR`             |
 | Arithmetic            | `ADD`, `ADDI`, `SUB`, `SUBI`, `INC`, `DEC`, `MUL`, `DIV`, `MOD`, `NEG` |
 | Bit operations        | `AND`, `OR`, `XOR`, `NOT`                         |
 | Comparisons and flags | `CMP`, `JE`, `JNE`, `JG`, `JGE`, `JL`, `JLE`      |
 | Register-based jumps  | `JMP`, `JZ`, `JNZ`                                |
 | Stack and calls       | `PUSH`, `POP`, `CALL`, `RET`                      |
-| Output and stop       | `PRINT`, `NOP`, `HALT`                            |
+| Address arithmetic    | `INCA`, `DECA`                                    |
+| Output and stop       | `PRINT`, `PRINTC`, `NOP`, `HALT`                  |
 
 The [language reference](docs/language-reference.md) describes the operand
 forms, instruction effects, flag rules, memory model, and stack behavior in more
@@ -113,7 +114,7 @@ flag jumps; `JZ` and `JNZ` test a register value directly.
 
 ## Memory
 
-The VM keeps program bytecode separate from data memory. Data memory has 256
+The VM keeps program bytecode separate from data memory. Data memory has 65536
 directly addressed 8-bit cells. Data directives can initialize named cells
 before the first instruction executes:
 
@@ -150,9 +151,29 @@ print:
 
 `.equ`, `.org`, `.byte`, `.ascii`, and `.string` provide a small data layout
 language. Byte operands and direct memory addresses accept expressions such as
-`copy - source` and `[source + 1]`. `LOAD` and `STORE` also accept one-register
-indexed forms such as `[R2]`, `[name + R2]`, and `[R2 + 4]`, which is enough to
-iterate `.string` data until its zero terminator.
+`copy - source` and `[source + 1]`. Direct memory addresses, jump targets, and
+`.org` use 16-bit addresses, so data can live above address `255`.
+
+`LOAD` and `STORE` also accept one-register indexed forms such as `[R2]`,
+`[name + R2]`, and `[R2 + 4]`, plus address-register pointer forms such as
+`[A0]`. Address registers are useful for iterating larger memory regions:
+
+```kasm
+; Print a zero-terminated string from high memory as ASCII characters.
+  .org 0x1200
+message:
+  .string "KASM\n"
+
+  MOVA A0, message
+loop:
+  LOAD R0, [A0]
+  JZ R0, end
+  PRINTC R0
+  INCA A0
+  JMP loop
+end:
+  HALT
+```
 
 ## Stack And Calls
 
@@ -184,7 +205,7 @@ double:
 ```
 
 The stack lives in data memory and grows downward from the high end of the
-256-cell memory space. The stack pointer is debugger-visible VM state, not a
+65536-cell memory space. The stack pointer is debugger-visible VM state, not a
 KASM register. The examples use `R0` for the primary input and return value;
 functions save and restore `R1` through `R3` when they modify them.
 
@@ -278,7 +299,8 @@ when (val stop = session.run()) {
 ```
 
 `DebugSnapshot.vm` exposes the instruction pointer, stack pointer, flags,
-registers, complete memory, and running state. `DebugSnapshot.nextLocation`
+byte registers, address registers, complete memory, and running state.
+`DebugSnapshot.nextLocation`
 maps the next instruction back to its KASM source line when the source map has a
 location for it.
 
@@ -291,6 +313,8 @@ location for it.
 | `examples/memory-swap.kasm`    | named initialized memory and calls           | `9`, then `4`          |
 | `examples/memory-layout.kasm`  | `.equ`, `.org`, `.byte`, address expressions | `18`, then `16`        |
 | `examples/memory-strings.kasm` | `.string` and indexed string iteration       | `75`, `65`, `83`, `77` |
+| `examples/ascii-print.kasm`    | `A0`, high memory, and `PRINTC`              | `KASM`                 |
+| `examples/aoc-2025-day1-sample.kasm` | parsing ASCII data with `CALL`/`RET`  | `3`                    |
 | `examples/stack-calls.kasm`    | nested calls and saved registers             | `18`                   |
 
 Run any example by passing its source path to the CLI:
