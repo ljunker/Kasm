@@ -7,16 +7,7 @@
 
   .org 0x2000
 input:
-  .ascii "L68\n"
-  .ascii "L30\n"
-  .ascii "R48\n"
-  .ascii "L5\n"
-  .ascii "R60\n"
-  .ascii "L55\n"
-  .ascii "L1\n"
-  .ascii "L99\n"
-  .ascii "R14\n"
-  .ascii "L82\n"
+  .incbin "data/aoc-2025-01-sample.txt"
   .byte 0
 
 direction:
