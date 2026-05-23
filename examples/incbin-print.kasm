@@ -1,0 +1,15 @@
+; Include raw bytes from a file relative to this source file and print them.
+  .org 0x1400
+message:
+  .incbin "data/incbin-message.txt"
+  .byte 0
+
+  MOVA A0, message
+loop:
+  LOAD R0, [A0]
+  JZ R0, end
+  PRINTC R0
+  INCA A0
+  JMP loop
+end:
+  HALT

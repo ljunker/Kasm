@@ -1,6 +1,12 @@
 package de.ljunker.kasm
 
-class Assembler {
+import java.io.IOException
+import java.nio.file.Path
+import kotlin.io.path.readBytes
+
+class Assembler(
+    private val baseDirectory: Path = Path.of(".")
+) {
 
     fun assemble(source: String): Program =
         assembleWithDebugInfo(source).program
@@ -180,7 +186,8 @@ class Assembler {
 
                         DirectiveKind.BYTE,
                         DirectiveKind.ASCII,
-                        DirectiveKind.STRING -> {
+                        DirectiveKind.STRING,
+                        DirectiveKind.INCBIN -> {
                             defineLabels(pendingLabels, dataAddress, symbols)
 
                             val size = dataDirectiveSize(statement, kind)
@@ -258,6 +265,9 @@ class Assembler {
             DirectiveKind.STRING ->
                 parseAsciiBytes(statement.arguments[0], statement.lineNumber).size + 1
 
+            DirectiveKind.INCBIN ->
+                readIncbinBytes(statement).size
+
             DirectiveKind.EQU,
             DirectiveKind.ORG ->
                 0
@@ -326,7 +336,8 @@ class Assembler {
 
                         DirectiveKind.BYTE,
                         DirectiveKind.ASCII,
-                        DirectiveKind.STRING -> {
+                        DirectiveKind.STRING,
+                        DirectiveKind.INCBIN -> {
                             val dataBytes = encodeDataDirective(statement, kind, symbols)
 
                             ensureDataRange(statement, dataAddress, dataBytes.size)
@@ -510,6 +521,9 @@ class Assembler {
             DirectiveKind.STRING ->
                 parseAsciiBytes(statement.arguments[0], statement.lineNumber) + 0
 
+            DirectiveKind.INCBIN ->
+                readIncbinBytes(statement)
+
             DirectiveKind.EQU,
             DirectiveKind.ORG ->
                 emptyList()
@@ -545,6 +559,7 @@ class Assembler {
             ".BYTE" -> DirectiveKind.BYTE
             ".ASCII" -> DirectiveKind.ASCII
             ".STRING" -> DirectiveKind.STRING
+            ".INCBIN" -> DirectiveKind.INCBIN
             else -> throw AssemblyException(
                 "Line ${statement.lineNumber}: unknown directive '${statement.name}'"
             )
@@ -582,7 +597,8 @@ class Assembler {
             }
 
             DirectiveKind.ASCII,
-            DirectiveKind.STRING -> {
+            DirectiveKind.STRING,
+            DirectiveKind.INCBIN -> {
                 if (count != 1) {
                     throw AssemblyException(
                         "Line ${statement.lineNumber}: ${statement.name.lowercase()} expects " +
@@ -957,11 +973,25 @@ class Assembler {
         }
 
     private fun parseAsciiBytes(value: String, lineNumber: Int): List<Int> {
+        val decoded = parseStringLiteral(value, lineNumber)
+
+        return decoded.map { char ->
+            if (char.code !in 0..ASCII_MAX) {
+                throw AssemblyException(
+                    "Line $lineNumber: string literal contains non-ASCII character '$char'"
+                )
+            }
+
+            char.code
+        }
+    }
+
+    private fun parseStringLiteral(value: String, lineNumber: Int): String {
         if (!value.startsWith('"')) {
             throw AssemblyException("Line $lineNumber: expected string literal, got '$value'")
         }
 
-        val bytes = mutableListOf<Int>()
+        val decoded = StringBuilder()
         var index = 1
 
         while (index < value.length) {
@@ -972,10 +1002,10 @@ class Assembler {
                     throw AssemblyException("Line $lineNumber: invalid string literal '$value'")
                 }
 
-                return bytes
+                return decoded.toString()
             }
 
-            val decoded = if (char == '\\') {
+            val decodedChar = if (char == '\\') {
                 if (index == value.length) {
                     throw AssemblyException("Line $lineNumber: unterminated string escape")
                 }
@@ -995,16 +1025,33 @@ class Assembler {
                 char
             }
 
-            if (decoded.code !in 0..ASCII_MAX) {
-                throw AssemblyException(
-                    "Line $lineNumber: string literal contains non-ASCII character '$decoded'"
-                )
-            }
-
-            bytes += decoded.code
+            decoded.append(decodedChar)
         }
 
         throw AssemblyException("Line $lineNumber: unterminated string literal")
+    }
+
+    private fun readIncbinBytes(statement: Statement.Directive): List<Int> {
+        val sourcePath = parseStringLiteral(statement.arguments[0], statement.lineNumber)
+        val path = resolveIncbinPath(sourcePath)
+
+        return try {
+            path.readBytes().map { byte -> byte.toInt() and Architecture.WORD_MASK }
+        } catch (error: IOException) {
+            throw AssemblyException(
+                "Line ${statement.lineNumber}: could not read incbin file '$sourcePath': ${error.message}"
+            )
+        }
+    }
+
+    private fun resolveIncbinPath(sourcePath: String): Path {
+        val path = Path.of(sourcePath)
+
+        return if (path.isAbsolute) {
+            path.normalize()
+        } else {
+            baseDirectory.resolve(path).normalize()
+        }
     }
 
     private inner class Symbols(
@@ -1192,7 +1239,8 @@ class Assembler {
         ORG,
         BYTE,
         ASCII,
-        STRING
+        STRING,
+        INCBIN
     }
 
     private data class ConstantDefinition(

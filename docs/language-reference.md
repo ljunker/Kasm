@@ -82,12 +82,19 @@ executes:
 | `.byte expr, ...` | Initialize one data-memory cell per byte expression.        |
 | `.ascii "text"`   | Initialize one cell per ASCII byte without a terminator.    |
 | `.string "text"`  | Initialize ASCII bytes followed by one zero byte.           |
+| `.incbin "path"`  | Initialize one cell per byte read from a binary file.       |
 
 `.org` affects only the data-memory layout cursor. It does not add bytecode or
 change bytecode instruction addresses. Reinitializing the same data-memory
 address through overlapping data directives is an assembly error. String
 directives support ASCII text and the escapes `\0`, `\n`, `\r`, `\t`, `\"`,
 and `\\`.
+
+`.incbin` reads raw bytes at assembly time and writes them to data memory
+without adding a terminator. Relative `.incbin` paths are resolved relative to
+the source file directory when using the CLI. When the assembler is used
+directly from Kotlin, relative paths are resolved from the assembler's
+configured `baseDirectory`.
 
 There is no `.word` directive yet because the current stored word size is one
 8-bit cell.
