@@ -37,21 +37,25 @@ with `0b`.
 
 KASM currently uses these operand forms:
 
-| Operand type   | Form                                       | Meaning                                       |
-|----------------|--------------------------------------------|-----------------------------------------------|
-| Register       | `R0` through `R3`                          | One of the four general-purpose registers.    |
-| Byte value     | `42`, `COUNT`, or `end - start`            | A value expression that resolves to `0..255`. |
-| Jump target    | A byte-value expression                    | A bytecode address that the VM may jump to.   |
-| Memory address | `[40]`, `[buffer + 1]`, or `[buffer + R2]` | A direct or indexed data-memory cell.         |
+| Operand type     | Form                                             | Meaning                                       |
+|------------------|--------------------------------------------------|-----------------------------------------------|
+| Register         | `R0` through `R3`                                | One of the four general-purpose byte registers. |
+| Address register | `A0` or `A1`                                    | One of the two 16-bit address registers.      |
+| Byte value       | `42`, `COUNT`, or `end - start`                 | A value expression that resolves to `0..255`. |
+| Address value    | `0x1234`, `buffer`, or `end - start`            | An address expression that resolves to `0..65535`. |
+| Jump target      | An address-value expression                     | A bytecode address that the VM may jump to.   |
+| Memory address   | `[40]`, `[buffer + R2]`, `[0x1200]`, or `[A0]`  | A direct, indexed, or pointer data-memory cell. |
 
-Byte values, direct memory addresses, and the static base of indexed memory
-addresses are checked by the assembler. Jump and call targets are also
-validated by the VM against the loaded program size when they execute.
+Byte values are checked against the 8-bit data range. Jump targets, direct
+memory addresses, `.org`, and the static base of indexed memory addresses are
+checked against the 16-bit address range by the assembler. Jump and call
+targets are also validated by the VM against the loaded program size when they
+execute.
 
 ## Symbols, Expressions, And Data
 
 `.equ` defines a named constant. Constants, code labels, and data labels share
-one symbol namespace and can appear in byte-value expressions. Current
+one symbol namespace and can appear in byte-value and address expressions. Current
 expressions support numeric literals, symbols, parentheses, unary `-`, `+`, and
 `-`:
 
@@ -90,17 +94,24 @@ There is no `.word` directive yet because the current stored word size is one
 
 ## Architecture
 
-KASM currently uses an explicit 8-bit word model:
+KASM currently uses 8-bit data with 16-bit addresses:
 
-- Program bytes, bytecode addresses, register values, and data-memory cells use
-  values in `0..255`.
-- A program image must fit in the 256-byte bytecode address space.
+- Program bytes, byte-register values, and data-memory cells use values in
+  `0..255`.
+- Bytecode addresses, data-memory addresses, and address-register values use
+  values in `0..65535`.
+- A program image must fit in the 65536-byte bytecode address space.
+- Data memory has 65536 8-bit cells.
 - Registers and data-memory cells expose their stored unsigned byte values.
   `PRINT` therefore prints values in `0..255`.
 - `ADD`, `SUB`, `INC`, and `DEC` write wrapped 8-bit results. For example,
   incrementing `255` stores `0`.
-- Indexed memory forms add an 8-bit static base and one 8-bit register value;
-  the effective data-memory address wraps to `0..255`.
+- Jump targets, direct memory addresses, indexed-memory bases, and `MOVA`
+  address immediates are encoded as two little-endian operand bytes.
+- Indexed memory forms add a 16-bit static base and one 8-bit byte-register
+  offset; the effective data-memory address wraps to `0..65535`.
+- `A0` and `A1` hold 16-bit addresses for pointer-style memory access through
+  `[A0]` and `[A1]`.
 
 Signed interpretation is used by the signed flag jumps after a flagged
 operation. In that interpretation the same stored byte range represents
@@ -112,6 +123,8 @@ operation. In that interpretation the same stored byte range represents
 |-------------|----------------------------|----------------------------------------------------------|
 | `MOV`       | `register, byte-value`     | Copy a value into a register.                            |
 | `MOV`       | `register, register`       | Copy one register into another register.                 |
+| `MOVA`      | `address-register, address-value` | Copy a 16-bit address into an address register.    |
+| `MOVA`      | `address-register, address-register` | Copy one address register into another.          |
 | `ADD`       | `register, register`       | Add into the target register with an 8-bit wrapped result. |
 | `ADDI`      | `register, byte-value`     | Add an immediate byte value into the target register.    |
 | `SUB`       | `register, register`       | Subtract into the target register with an 8-bit wrapped result. |
@@ -138,6 +151,8 @@ operation. In that interpretation the same stored byte range represents
 | `JLE`       | `jump-target`              | Signed jump when the last comparison was less or equal.  |
 | `LOAD`      | `register, memory-address` | Load one data-memory cell into a register.               |
 | `STORE`     | `memory-address, register` | Store a register value into one data-memory cell.        |
+| `INCA`      | `address-register`         | Increment one address register with 16-bit wrapping.     |
+| `DECA`      | `address-register`         | Decrement one address register with 16-bit wrapping.     |
 | `PUSH`      | `register`                 | Push a register value on the stack.                      |
 | `POP`       | `register`                 | Pop the stack top into a register.                       |
 | `CALL`      | `jump-target`              | Push the return address and jump to a function.          |
@@ -145,6 +160,7 @@ operation. In that interpretation the same stored byte range represents
 | `CLR`       | `register`                 | Clear one register to zero.                              |
 | `NOP`       | none                       | Do nothing.                                              |
 | `PRINT`     | `register`                 | Print the register value as one output line.             |
+| `PRINTC`    | `register`                 | Print the register value as one ASCII character.         |
 | `HALT`      | none                       | Stop the VM.                                             |
 
 ## Flags
@@ -169,56 +185,65 @@ with a VM error. Successful `DIV`, `MOD`, `AND`, `OR`, `XOR`, `NOT`, and `CLR`
 update Zero and Sign, and clear Carry and Overflow. `NEG` sets Carry when the
 input was non-zero and sets Overflow when negating stored value `128`.
 
+`MOVA`, `INCA`, `DECA`, `LOAD`, `STORE`, `PUSH`, `POP`, jumps, calls, output
+instructions, `NOP`, and `HALT` do not update result flags.
+
 `JE` and `JNE` test the Zero flag. `JG`, `JGE`, `JL`, and `JLE` are signed
 comparisons based on Zero, Sign, and Overflow. `JZ` and `JNZ` are separate
 register-value tests and do not depend on the result flags.
 
 ## Memory
 
-Program bytecode and data memory are separate. The current VM provides 256
-8-bit data-memory cells addressed as `0..255`.
+Program bytecode and data memory are separate. The current VM provides 65536
+8-bit data-memory cells addressed as `0..65535`.
 
-`LOAD` and `STORE` accept direct data-memory addresses and one-register indexed
-addresses. Literals still work, but data labels make a source layout explicit:
+`LOAD` and `STORE` accept direct data-memory addresses, one-register indexed
+addresses, and address-register pointer forms. Literals still work, but data
+labels make a source layout explicit:
 
 ```kasm
-.org 40
+.org 0x1200
 name:
-  .string "OK"
+  .string "OK\n"
 
-  MOV R2, 0
+  MOVA A0, name
 loop:
-  LOAD R0, [name + R2]
+  LOAD R0, [A0]
   JZ R0, end
-  PRINT R0
-  INC R2
+  PRINTC R0
+  INCA A0
   JMP loop
 end:
   HALT
 ```
 
 Direct forms such as `[name]` and `[name + 1]` are resolved completely by the
-assembler. Indexed forms use one runtime register with a static base:
+assembler. Runtime memory forms include one byte-register offset with a static
+base, or one address register:
 
 - `[R2]`
 - `[name + R2]`
 - `[R2 + name]`
 - `[R2 + 4]`
+- `[A0]`
+- `[A1]`
 
-Address forms with two runtime registers such as `[R1 + R2]` are not
-implemented.
+Address forms with two runtime byte registers such as `[R1 + R2]` and mixed
+address-register plus byte-register forms such as `[A0 + R1]` are not
+implemented yet.
 
 ## Stack and Calls
 
-The stack uses the same 256-cell data memory and grows downward from the high
+The stack uses the same 65536-cell data memory and grows downward from the high
 end of memory. A `PUSH` writes one byte value at the new top. A `POP` removes
 the current top value. The stack pointer is VM state: the debugger shows `SP`,
 but KASM programs do not have an `SP` register or direct stack-pointer
 instruction yet.
 
-`CALL` pushes the return bytecode address before it jumps. `RET` pops that
-address and jumps back to it. User `PUSH` and `POP` instructions therefore share
-stack space with nested calls.
+`CALL` pushes the 16-bit return bytecode address as two bytes before it jumps;
+the low byte is at the stack top. `RET` pops those two bytes and jumps back to
+that address. User `PUSH` and `POP` instructions therefore share stack space
+with nested calls.
 
 The VM rejects stack underflow and stack overflow. Programs that lay out fixed
 high-memory data must avoid colliding with the active stack.
@@ -232,6 +257,8 @@ this convention:
 - A callee may overwrite `R0` and all result flags.
 - A callee that modifies `R1`, `R2`, or `R3` saves and restores those registers
   with `PUSH` and `POP`.
+- `A0` and `A1` are scratch pointer registers until KASM gains address-register
+  save/restore instructions.
 - A function balances its own saved stack values before `RET`, so the return
   address pushed by `CALL` is the value consumed by `RET`.
 

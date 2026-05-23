@@ -20,6 +20,11 @@ Die Sprache kennt aktuell:
 - Register- und Immediate-Moves:
   - `MOV R0, 10`
   - `MOV R0, R1`
+- 16-bit-Adressregister und Pointer:
+  - `MOVA A0, buffer`
+  - `MOVA A1, A0`
+  - `INCA A0`
+  - `DECA A0`
 - Arithmetik:
   - `ADD`
   - `ADDI`
@@ -52,6 +57,7 @@ Die Sprache kennt aktuell:
   - `LOAD R0, [40]`
   - `STORE [40], R0`
   - `LOAD R0, [buffer]`
+  - `LOAD R0, [A0]`
 - Stack und Funktionsaufrufe:
   - `PUSH`
   - `POP`
@@ -61,17 +67,20 @@ Die Sprache kennt aktuell:
   - `CLR`
   - `NOP`
   - `PRINT`
+  - `PRINTC`
   - `HALT`
 
 ### VM-Modell
 
 Der aktuelle VM-Stand trifft bereits ein paar Architekturentscheidungen:
 
-- Bytecode-Operanden und Sprungziele werden als Werte von `0..255` kodiert.
-- Programmbilder passen in den 256-Byte-Adressraum.
-- Register und Daten-Memory-Zellen speichern 8-bit-Werte; Arithmetik wrappt
-  modulo 256.
-- Daten-Memory hat 256 8-bit-Zellen.
+- Bytecode-Operanden fuer Adressen und Sprungziele werden als 16-bit-Werte
+  kodiert.
+- Programmbilder passen in den 65536-Byte-Adressraum.
+- Byte-Register und Daten-Memory-Zellen speichern 8-bit-Werte; Arithmetik
+  wrappt modulo 256.
+- `A0` und `A1` speichern 16-bit-Adressen fuer Pointer-Zugriffe.
+- Daten-Memory hat 65536 8-bit-Zellen.
 - Programm-Bytecode und Daten-Memory sind getrennt.
 - Der Stack liegt im Daten-Memory und waechst von oben nach unten.
 - `SP` bleibt interner VM-Zustand und wird im Debugger gezeigt, nicht als
@@ -97,6 +106,9 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
 - `examples/memory-layout.kasm` zeigt `.equ`, `.org`, `.byte` und
   Adressausdruecke.
 - `examples/memory-strings.kasm` zeigt `.string` und indizierte String-Iteration.
+- `examples/ascii-print.kasm` zeigt `A0`, high memory und `PRINTC`.
+- `examples/aoc-2025-day1-sample.kasm` zeigt einen kleinen ASCII-Parser mit
+  `CALL`/`RET` fuer Advent of Code 2025 Day 1.
 - `examples/stack-calls.kasm` zeigt verschachtelte `CALL`/`RET` und gesicherte Register.
 
 ### CLI und Debugger
@@ -162,8 +174,9 @@ Absicherung spaeter nachzuholen.
 Memory, Stack und Flags machen KASM jetzt zu einer kleinen Maschine und nicht
 mehr nur zu einem Assembler-Spielzeug. Der Maschinenstand ist jetzt explizit:
 
-- Register, Daten-Memory und Programmadressen sind auf 8-bit-Werte
-  beziehungsweise 256 Adressen festgelegt.
+- Byte-Register und Daten-Memory-Zellen sind auf 8-bit-Werte festgelegt.
+- Programmadressen, Datenadressen und Address-Register sind auf 16-bit-Werte
+  beziehungsweise 65536 Adressen festgelegt.
 - Arithmetik wrappt; Zero, Sign, Carry und Overflow sind getestet und
   dokumentiert.
 - `JG` und `JL` folgen signed Flag-Semantik an Byte-Grenzen.
@@ -173,6 +186,27 @@ mehr nur zu einem Assembler-Spielzeug. Der Maschinenstand ist jetzt explizit:
 
 Diese Regeln sind Grundlage fuer `MUL`, `DIV`, weitere Spruenge,
 Assembler-Direktiven, Debugger und Disassembler.
+
+### Abgeschlossen: 16-bit-Adressraum und ASCII-Ausgabe
+
+Der Schritt weg von der reinen 255er-Denke ist umgesetzt, ohne die 8-bit-Daten
+aufzugeben:
+
+- Byte-Register `R0` bis `R3` bleiben 8-bit.
+- Daten-Memory und Programmadressen haben jetzt 16-bit-Adressen.
+- Sprungziele, `CALL`, direkte Memory-Adressen, indizierte Memory-Basen und
+  `.org` werden als 16-bit-Adressen verarbeitet.
+- `A0` und `A1` sind 16-bit-Adressregister fuer Pointer-Zugriffe.
+- `LOAD R0, [A0]` und `STORE [A0], R0` greifen ueber Address-Register zu.
+- `MOVA`, `INCA` und `DECA` bewegen und veraendern Address-Register.
+- `CALL` legt 16-bit-Ruecksprungadressen als zwei Bytes auf den Stack.
+- `PRINTC` gibt einen Byte-Wert als ASCII-Zeichen aus.
+- `examples/ascii-print.kasm` und `examples/aoc-2025-day1-sample.kasm`
+  demonstrieren High-Memory-Strings und Pointer-Iteration.
+
+Offen bleibt echtes Host-Datei-I/O: Programme koennen jetzt grosse
+Speicherbereiche adressieren, aber die CLI kann noch keine externe Datei in
+einen Memory-Bereich laden.
 
 ### Abgeschlossen: Memory im Assembler wirklich nutzbar machen
 
@@ -210,7 +244,25 @@ dem aktuellen Kern bereits moeglich sind. Dieser Block ist umgesetzt:
 Unsigned Vergleichsspruenge auf Basis des Carry-Flags bleiben eine moegliche
 spaetere Ergaenzung, wenn Programme sie wirklich brauchen.
 
-### 1. Direkten CLI-Workflow ausbauen
+### 1. Datei-I/O fuer Programme nutzbar machen
+
+Der 16-bit-Adressraum macht groessere Eingaben sinnvoll, aber noch nicht
+bequem. Als naechster Schritt sollte die CLI externe Dateien in Daten-Memory
+laden koennen.
+
+- CLI-Loader:
+  - `kasm run program.kasm --load input.txt:0x2000`
+  - Datei bytesweise in Daten-Memory schreiben
+  - Bereichsfehler melden, wenn die Datei nicht mehr in `0..65535` passt
+  - optional Nullterminator anhaengen fuer textbasierte Parser
+- Debugger-Unterstuetzung:
+  - dieselben Loader-Optionen fuer `kasm debug`
+  - Memory-Fenster ab einer Adresse anzeigen
+- Spaeter moegliche Sprachebene:
+  - `.incbin "input.txt"` fuer reproduzierbare Assemblierung
+  - `.include` fuer Quellmodule, nicht fuer Rohdaten
+
+### 2. Direkten CLI-Workflow ausbauen
 
 Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
 werden, sollte zuerst der normale Aufruf ohne Gradle sauber werden und danach
@@ -253,7 +305,7 @@ das Bytecode- und Debugger-Tooling folgen.
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
   - spaeter optional im Bytecode-Format persistieren
 
-### 2. Parser und Diagnostik verbessern
+### 3. Parser und Diagnostik verbessern
 
 Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Die neuen
 Direktiven, Ausdruecke und Strings machen eine sauberere Parser-Grenze jetzt
@@ -268,7 +320,7 @@ nuetzlicher; Makros wuerden ohne sie schnell unhandlich.
   - erwarteter Operandentyp
 - Mehrere Fehler in einem Assembler-Lauf sammeln, wo das sinnvoll ist.
 
-### 3. Editor- und Sprachtooling nachziehen
+### 4. Editor- und Sprachtooling nachziehen
 
 Das TextMate-Highlighting ist ein guter Anfang. Sobald Syntax und Semantik
 stabiler sind, lohnt sich reichhaltigeres Tooling.
@@ -279,7 +331,7 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 - Completion und Hover-Dokumentation.
 - Spaeter Diagnostics oder ein kleiner Language Server.
 
-### 4. Groessere Sprachideen spaeter
+### 5. Groessere Sprachideen spaeter
 
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 
@@ -288,7 +340,6 @@ Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 - Komplexere Adressierung mit mehr als einem Laufzeitregister, falls reale
   Beispiele sie brauchen.
 - Bessere I/O:
-  - `PRINTC`
   - `PRINTS`
   - eventuell einfache Input- oder Syscall-Instruktionen
 - Mehr Beispiele oder kleine Standardroutinen:

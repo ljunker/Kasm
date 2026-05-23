@@ -65,7 +65,7 @@
       "patterns": [
         {
           "name": "keyword.instruction.kasm",
-          "match": "\\b(?i:MOV|ADD|SUB|INC|DEC|CMP|JMP|JZ|JNZ|JE|JNE|JG|JL|LOAD|STORE|PUSH|POP|CALL|RET|PRINT|HALT)\\b"
+          "match": "\\b(?i:MOV|MOVA|ADD|ADDI|SUB|SUBI|INC|DEC|MUL|DIV|MOD|NEG|AND|OR|XOR|NOT|CMP|JMP|JZ|JNZ|JE|JNE|JG|JGE|JL|JLE|LOAD|STORE|PUSH|POP|CALL|RET|CLR|NOP|PRINT|PRINTC|INCA|DECA|HALT)\\b"
         }
       ]
     },
@@ -81,7 +81,7 @@
       "patterns": [
         {
           "name": "variable.language.register.kasm",
-          "match": "\\b(?i:R[0-3])\\b"
+          "match": "\\b(?i:R[0-3]|A[0-1])\\b"
         }
       ]
     },

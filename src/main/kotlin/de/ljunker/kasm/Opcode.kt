@@ -42,6 +42,13 @@ enum class Opcode(
     JLE(0x23, "JLE", OperandType.JUMP_TARGET),
     CLR(0x24, "CLR", OperandType.REGISTER),
     NOP(0x25, "NOP"),
+    PRINTC(0x26, "PRINTC", OperandType.REGISTER),
+    MOVA(0x27, "MOVA", OperandType.ADDRESS_REGISTER, OperandType.ADDRESS_VALUE),
+    MOVA_REGISTER(0x28, "MOVA", OperandType.ADDRESS_REGISTER, OperandType.ADDRESS_REGISTER),
+    INCA(0x29, "INCA", OperandType.ADDRESS_REGISTER),
+    DECA(0x2A, "DECA", OperandType.ADDRESS_REGISTER),
+    LOAD_ADDRESS_REGISTER(0x2B, "LOAD", OperandType.REGISTER, OperandType.ADDRESS_REGISTER),
+    STORE_ADDRESS_REGISTER(0x2C, "STORE", OperandType.ADDRESS_REGISTER, OperandType.REGISTER),
     HALT(0xFF, "HALT");
 
     val operandTypes: List<OperandType> = operandTypes.toList()
@@ -70,8 +77,10 @@ enum class OperandType(
     val byteCount: Int
 ) {
     REGISTER(1),
+    ADDRESS_REGISTER(1),
     BYTE_VALUE(1),
-    JUMP_TARGET(1),
-    MEMORY_ADDRESS(1),
-    INDEXED_MEMORY_ADDRESS(2)
+    ADDRESS_VALUE(2),
+    JUMP_TARGET(2),
+    MEMORY_ADDRESS(2),
+    INDEXED_MEMORY_ADDRESS(3)
 }

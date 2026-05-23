@@ -1,9 +1,15 @@
 package de.ljunker.kasm
 
 class VirtualMachine(
-    private val output: (String) -> Unit = ::println
+    private val outputLine: (String) -> Unit,
+    private val outputText: (String) -> Unit
 ) {
+    constructor() : this(::println, ::print)
+
+    constructor(output: (String) -> Unit) : this(output, output)
+
     private val registers = IntArray(REGISTER_COUNT)
+    private val addressRegisters = IntArray(ADDRESS_REGISTER_COUNT)
     private val memory = IntArray(MEMORY_SIZE)
 
     private var program: Program? = null
@@ -26,6 +32,7 @@ class VirtualMachine(
         ip = 0
         running = true
         registers.fill(0)
+        addressRegisters.fill(0)
         memory.fill(0)
         program.initialMemory.forEach { (address, value) ->
             memory[address] = value
@@ -108,14 +115,14 @@ class VirtualMachine(
             }
 
             Opcode.JMP -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 jumpTo(program, address)
             }
 
             Opcode.JZ -> {
                 val register = readRegister(program)
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (registers[register] == 0) {
                     jumpTo(program, address)
@@ -124,7 +131,7 @@ class VirtualMachine(
 
             Opcode.JNZ -> {
                 val register = readRegister(program)
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (registers[register] != 0) {
                     jumpTo(program, address)
@@ -132,7 +139,7 @@ class VirtualMachine(
             }
 
             Opcode.JE -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (zeroFlag) {
                     jumpTo(program, address)
@@ -140,7 +147,7 @@ class VirtualMachine(
             }
 
             Opcode.JNE -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (!zeroFlag) {
                     jumpTo(program, address)
@@ -148,7 +155,7 @@ class VirtualMachine(
             }
 
             Opcode.JG -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (!zeroFlag && signFlag == overflowFlag) {
                     jumpTo(program, address)
@@ -156,7 +163,7 @@ class VirtualMachine(
             }
 
             Opcode.JL -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (signFlag != overflowFlag) {
                     jumpTo(program, address)
@@ -165,13 +172,13 @@ class VirtualMachine(
 
             Opcode.LOAD -> {
                 val register = readRegister(program)
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 registers[register] = readMemory(address)
             }
 
             Opcode.STORE -> {
-                val address = readByte(program)
+                val address = readAddress(program)
                 val register = readRegister(program)
 
                 writeMemory(address, registers[register])
@@ -179,18 +186,32 @@ class VirtualMachine(
 
             Opcode.LOAD_INDEXED -> {
                 val register = readRegister(program)
-                val baseAddress = readByte(program)
+                val baseAddress = readAddress(program)
                 val indexRegister = readRegister(program)
 
                 registers[register] = readMemory(indexedAddress(baseAddress, indexRegister))
             }
 
             Opcode.STORE_INDEXED -> {
-                val baseAddress = readByte(program)
+                val baseAddress = readAddress(program)
                 val indexRegister = readRegister(program)
                 val register = readRegister(program)
 
                 writeMemory(indexedAddress(baseAddress, indexRegister), registers[register])
+            }
+
+            Opcode.LOAD_ADDRESS_REGISTER -> {
+                val register = readRegister(program)
+                val addressRegister = readAddressRegister(program)
+
+                registers[register] = readMemory(addressRegisters[addressRegister])
+            }
+
+            Opcode.STORE_ADDRESS_REGISTER -> {
+                val addressRegister = readAddressRegister(program)
+                val register = readRegister(program)
+
+                writeMemory(addressRegisters[addressRegister], registers[register])
             }
 
             Opcode.PUSH -> {
@@ -206,20 +227,61 @@ class VirtualMachine(
             }
 
             Opcode.CALL -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
-                push(ip)
+                pushAddress(ip)
                 jumpTo(program, address)
             }
 
             Opcode.RET -> {
-                jumpTo(program, pop())
+                jumpTo(program, popAddress())
             }
 
             Opcode.PRINT -> {
                 val register = readRegister(program)
 
-                output(registers[register].toString())
+                outputLine(registers[register].toString())
+            }
+
+            Opcode.PRINTC -> {
+                val register = readRegister(program)
+                val value = registers[register]
+
+                if (value > ASCII_MAX) {
+                    throw VmException("PRINTC value is not ASCII: $value")
+                }
+
+                outputText(value.toChar().toString())
+            }
+
+            Opcode.MOVA -> {
+                val addressRegister = readAddressRegister(program)
+                val value = readAddress(program)
+
+                addressRegisters[addressRegister] = value
+            }
+
+            Opcode.MOVA_REGISTER -> {
+                val target = readAddressRegister(program)
+                val source = readAddressRegister(program)
+
+                addressRegisters[target] = addressRegisters[source]
+            }
+
+            Opcode.INCA -> {
+                val addressRegister = readAddressRegister(program)
+
+                addressRegisters[addressRegister] = Architecture.normalizeAddress(
+                    addressRegisters[addressRegister] + 1
+                )
+            }
+
+            Opcode.DECA -> {
+                val addressRegister = readAddressRegister(program)
+
+                addressRegisters[addressRegister] = Architecture.normalizeAddress(
+                    addressRegisters[addressRegister] - 1
+                )
             }
 
             Opcode.ADDI -> {
@@ -329,7 +391,7 @@ class VirtualMachine(
             }
 
             Opcode.JGE -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (zeroFlag || signFlag == overflowFlag) {
                     jumpTo(program, address)
@@ -337,7 +399,7 @@ class VirtualMachine(
             }
 
             Opcode.JLE -> {
-                val address = readByte(program)
+                val address = readAddress(program)
 
                 if (zeroFlag || signFlag != overflowFlag) {
                     jumpTo(program, address)
@@ -368,6 +430,7 @@ class VirtualMachine(
         VmSnapshot(
             instructionPointer = ip,
             registers = registers.toList(),
+            addressRegisters = addressRegisters.toList(),
             memory = memory.toList(),
             stackPointer = stackPointer,
             zeroFlag = zeroFlag,
@@ -395,6 +458,23 @@ class VirtualMachine(
         return register
     }
 
+    private fun readAddressRegister(program: Program): Int {
+        val register = readByte(program)
+
+        if (register !in 0 until ADDRESS_REGISTER_COUNT) {
+            throw VmException("Invalid address register A$register")
+        }
+
+        return register
+    }
+
+    private fun readAddress(program: Program): Int {
+        val low = readByte(program)
+        val high = readByte(program)
+
+        return low or (high shl Architecture.WORD_BITS)
+    }
+
     private fun readMemory(address: Int): Int {
         ensureMemoryAddress(address)
 
@@ -413,7 +493,7 @@ class VirtualMachine(
     }
 
     private fun indexedAddress(baseAddress: Int, indexRegister: Int): Int =
-        Architecture.normalizeWord(baseAddress + registers[indexRegister])
+        Architecture.normalizeAddress(baseAddress + registers[indexRegister])
 
     private fun push(value: Int) {
         if (stackPointer == 0) {
@@ -427,12 +507,35 @@ class VirtualMachine(
         memory[stackPointer] = value
     }
 
+    private fun pushAddress(address: Int) {
+        if (stackPointer < 2) {
+            throw VmException("Stack overflow")
+        }
+        if (address !in Architecture.addressRange) {
+            throw VmException("Stack address out of range: $address")
+        }
+
+        push((address ushr Architecture.WORD_BITS) and Architecture.WORD_MASK)
+        push(address and Architecture.WORD_MASK)
+    }
+
     private fun pop(): Int {
         if (stackPointer == MEMORY_SIZE) {
             throw VmException("Stack underflow")
         }
 
         return memory[stackPointer++]
+    }
+
+    private fun popAddress(): Int {
+        if (stackPointer > MEMORY_SIZE - 2) {
+            throw VmException("Stack underflow")
+        }
+
+        val low = pop()
+        val high = pop()
+
+        return low or (high shl Architecture.WORD_BITS)
     }
 
     private fun addToRegister(register: Int, value: Int) {
@@ -488,7 +591,9 @@ class VirtualMachine(
 
     companion object {
         private const val REGISTER_COUNT = Architecture.REGISTER_COUNT
+        private const val ADDRESS_REGISTER_COUNT = Architecture.ADDRESS_REGISTER_COUNT
         private const val MEMORY_SIZE = Architecture.MEMORY_SIZE
+        private const val ASCII_MAX = 0x7F
         private val SIGNED_WORD_RANGE = -Architecture.WORD_SIGN_BIT until Architecture.WORD_SIGN_BIT
     }
 }
@@ -496,6 +601,7 @@ class VirtualMachine(
 data class VmSnapshot(
     val instructionPointer: Int,
     val registers: List<Int>,
+    val addressRegisters: List<Int>,
     val memory: List<Int>,
     val stackPointer: Int,
     val zeroFlag: Boolean,
