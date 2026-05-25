@@ -348,6 +348,66 @@ class VirtualMachineTest {
     }
 
     @Test
+    fun addWithCarryAndSubtractWithBorrow() {
+        val vm = VirtualMachine()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 255
+            MOV R1, 1
+            ADD R0, R1
+            MOV R2, 2
+            MOV R3, 3
+            ADC R2, R3
+
+            MOV R0, 0
+            MOV R1, 1
+            SUB R0, R1
+            MOV R0, 5
+            MOV R1, 2
+            SBC R0, R1
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(2, snapshot.registers[0])
+        assertEquals(6, snapshot.registers[2])
+        assertEquals(false, snapshot.carryFlag)
+        assertEquals(false, snapshot.overflowFlag)
+    }
+
+    @Test
+    fun pushesAndPopsFlags() {
+        val vm = VirtualMachine()
+        val program = Assembler().assemble(
+            """
+            MOV R0, 255
+            MOV R1, 1
+            ADD R0, R1
+            PUSHF
+            MOV R2, 1
+            DEC R2
+            POPF
+            MOV R2, 2
+            MOV R3, 3
+            ADC R2, R3
+            HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(6, snapshot.registers[2])
+        assertEquals(false, snapshot.carryFlag)
+        assertEquals(false, snapshot.overflowFlag)
+    }
+
+    @Test
     fun multiplicationAndDivision() {
         val output = mutableListOf<String>()
         val program = Assembler().assemble(

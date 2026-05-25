@@ -1,0 +1,142 @@
+; Read decimal ASCII from a text file with .incbin and convert it into .num64
+; storage at runtime. examples/data/num64-decimal.txt contains: 655361234
+; The parsed value is printed as 8 bytes from high byte to low byte:
+; 0, 0, 0, 0, 39, 16, 4, 210.
+  .org 0x1700
+digits:
+  .incbin "data/num64-decimal.txt"
+digits_end:
+  .byte 0
+parsed:
+  .num64 0
+temp:
+  .num64 0
+digit64:
+  .num64 0
+digit_byte:
+  .byte 0
+digit_index:
+  .byte 0
+
+parse_loop:
+  LOAD R2, [digit_index]
+  LOAD R0, [digits + R2]
+  JZ R0, parse_done
+  MOV R1, 10
+  CMP R0, R1
+  JE parse_done
+  SUBI R0, 48
+  STORE [digit_byte], R0
+
+  PUSHA temp
+  CALL clear64
+  DROP 2
+  MOV R3, 10
+mul10_loop:
+  PUSHA parsed
+  PUSHA temp
+  CALL add64
+  DROP 4
+  DEC R3
+  JNZ R3, mul10_loop
+  PUSHA parsed
+  PUSHA temp
+  CALL copy64
+  DROP 4
+
+  PUSHA digit64
+  CALL clear64
+  DROP 2
+  LOAD R0, [digit_byte]
+  STORE [digit64], R0
+  PUSHA digit64
+  PUSHA parsed
+  CALL add64
+  DROP 4
+
+  LOAD R2, [digit_index]
+  INC R2
+  STORE [digit_index], R2
+  JMP parse_loop
+
+parse_done:
+  PUSHA parsed
+  CALL print64
+  DROP 2
+  HALT
+
+copy64:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  MOV R2, 8
+copy64_loop:
+  LOAD R0, [A0]
+  STORE [A1], R0
+  INCA A0
+  INCA A1
+  DEC R2
+  JNZ R2, copy64_loop
+  POP R2
+  RET
+
+clear64:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 8
+  CLR R0
+clear64_loop:
+  STORE [A0], R0
+  INCA A0
+  DEC R2
+  JNZ R2, clear64_loop
+  POP R2
+  RET
+
+add64:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  PUSH R3
+  MOV R2, 8
+  CLR R3
+add64_loop:
+  LOAD R0, [A0]
+  LOAD R1, [A1]
+  JZ R3, add64_low_byte
+  ADC R0, R1
+  JMP add64_store
+add64_low_byte:
+  ADD R0, R1
+  MOV R3, 1
+add64_store:
+  STORE [A0], R0
+  INCA A0
+  INCA A1
+  PUSHF
+  DEC R2
+  POPF
+  JNZ R2, add64_loop
+  POP R3
+  POP R2
+  RET
+
+print64:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 7
+print64_seek_end:
+  INCA A0
+  DEC R2
+  JNZ R2, print64_seek_end
+  MOV R2, 8
+print64_loop:
+  LOAD R0, [A0]
+  PRINT R0
+  DEC R2
+  JZ R2, print64_done
+  DECA A0
+  JNZ R2, print64_loop
+print64_done:
+  POP R2
+  RET

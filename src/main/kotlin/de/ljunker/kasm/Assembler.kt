@@ -1,6 +1,7 @@
 package de.ljunker.kasm
 
 import java.io.IOException
+import java.math.BigInteger
 import java.nio.file.Path
 import kotlin.io.path.readBytes
 
@@ -166,7 +167,7 @@ class Assembler(
 
                     ensureArgumentCount(statement, opcode)
 
-                    codeAddress += 1 + opcode.operandByteCount
+                    codeAddress += instructionSize(opcode)
                 }
 
                 is Statement.Directive -> {
@@ -185,6 +186,7 @@ class Assembler(
                             )
 
                         DirectiveKind.BYTE,
+                        DirectiveKind.NUM64,
                         DirectiveKind.ASCII,
                         DirectiveKind.STRING,
                         DirectiveKind.INCBIN -> {
@@ -258,6 +260,9 @@ class Assembler(
         when (kind) {
             DirectiveKind.BYTE ->
                 statement.arguments.size
+
+            DirectiveKind.NUM64 ->
+                NUM64_BYTE_COUNT
 
             DirectiveKind.ASCII ->
                 parseAsciiBytes(statement.arguments[0], statement.lineNumber).size
@@ -335,6 +340,7 @@ class Assembler(
                             )
 
                         DirectiveKind.BYTE,
+                        DirectiveKind.NUM64,
                         DirectiveKind.ASCII,
                         DirectiveKind.STRING,
                         DirectiveKind.INCBIN -> {
@@ -375,6 +381,11 @@ class Assembler(
                 bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
             }
 
+            Opcode.PUSHI,
+            Opcode.DROP -> {
+                bytes += parseByteExpression(statement.arguments[0], symbols, statement.lineNumber)
+            }
+
             Opcode.MOV_REGISTER -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
                 bytes += parseRegister(statement.arguments[1], statement.lineNumber)
@@ -393,8 +404,21 @@ class Assembler(
                 bytes += parseAddressRegister(statement.arguments[1], statement.lineNumber)
             }
 
+            Opcode.PUSHA -> {
+                encodeAddress(
+                    address = parseAddressExpression(statement.arguments[0], symbols, statement.lineNumber),
+                    bytes = bytes
+                )
+            }
+
+            Opcode.PUSHA_REGISTER -> {
+                bytes += parseAddressRegister(statement.arguments[0], statement.lineNumber)
+            }
+
             Opcode.ADD,
+            Opcode.ADC,
             Opcode.SUB,
+            Opcode.SBC,
             Opcode.CMP,
             Opcode.MUL,
             Opcode.DIV,
@@ -479,8 +503,29 @@ class Assembler(
                 bytes += parseRegister(statement.arguments[1], statement.lineNumber)
             }
 
+            Opcode.PEEK -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
+            }
+
+            Opcode.PEEK_REGISTER_OFFSET -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.PEEKA -> {
+                bytes += parseAddressRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseByteExpression(statement.arguments[1], symbols, statement.lineNumber)
+            }
+
+            Opcode.PEEKA_REGISTER_OFFSET -> {
+                bytes += parseAddressRegister(statement.arguments[0], statement.lineNumber)
+                bytes += parseRegister(statement.arguments[1], statement.lineNumber)
+            }
+
             Opcode.PUSH,
             Opcode.POP,
+            Opcode.DROP_REGISTER,
             Opcode.INC,
             Opcode.DEC -> {
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
@@ -498,6 +543,8 @@ class Assembler(
 
             Opcode.RET,
             Opcode.HALT,
+            Opcode.PUSHF,
+            Opcode.POPF,
             Opcode.NOP -> {
                 // no operands
             }
@@ -514,6 +561,9 @@ class Assembler(
                 statement.arguments.map { argument ->
                     parseByteExpression(argument, symbols, statement.lineNumber)
                 }
+
+            DirectiveKind.NUM64 ->
+                encodeNum64Directive(statement, symbols)
 
             DirectiveKind.ASCII ->
                 parseAsciiBytes(statement.arguments[0], statement.lineNumber)
@@ -552,11 +602,15 @@ class Assembler(
         bytes += (address ushr Architecture.WORD_BITS) and Architecture.WORD_MASK
     }
 
+    private fun instructionSize(opcode: Opcode): Int =
+        1 + opcode.operandByteCount
+
     private fun directiveKind(statement: Statement.Directive): DirectiveKind =
         when (statement.name) {
             ".EQU" -> DirectiveKind.EQU
             ".ORG" -> DirectiveKind.ORG
             ".BYTE" -> DirectiveKind.BYTE
+            ".NUM64" -> DirectiveKind.NUM64
             ".ASCII" -> DirectiveKind.ASCII
             ".STRING" -> DirectiveKind.STRING
             ".INCBIN" -> DirectiveKind.INCBIN
@@ -596,6 +650,7 @@ class Assembler(
                 }
             }
 
+            DirectiveKind.NUM64,
             DirectiveKind.ASCII,
             DirectiveKind.STRING,
             DirectiveKind.INCBIN -> {
@@ -624,6 +679,34 @@ class Assembler(
             statement.arguments.getOrNull(1)?.let(::isAddressRegister) == true
         ) {
             return Opcode.MOVA_REGISTER
+        }
+
+        if (
+            opcode == Opcode.PUSHA &&
+            statement.arguments.getOrNull(0)?.let(::isAddressRegister) == true
+        ) {
+            return Opcode.PUSHA_REGISTER
+        }
+
+        if (
+            opcode == Opcode.DROP &&
+            statement.arguments.getOrNull(0)?.let(::isRegister) == true
+        ) {
+            return Opcode.DROP_REGISTER
+        }
+
+        if (
+            opcode == Opcode.PEEK &&
+            statement.arguments.getOrNull(1)?.let(::isRegister) == true
+        ) {
+            return Opcode.PEEK_REGISTER_OFFSET
+        }
+
+        if (
+            opcode == Opcode.PEEKA &&
+            statement.arguments.getOrNull(1)?.let(::isRegister) == true
+        ) {
+            return Opcode.PEEKA_REGISTER_OFFSET
         }
 
         if (
@@ -766,7 +849,7 @@ class Assembler(
             is Expression.Symbol -> {
                 if (isRegister(expression.name)) {
                     IndexedMemoryExpression(
-                        base = Expression.Number(0),
+                        base = Expression.Number(BIG_ZERO),
                         indexRegister = parseRegister(expression.name, lineNumber)
                     )
                 } else {
@@ -905,14 +988,14 @@ class Assembler(
     ): Int {
         val resolved = evaluateExpression(expression, symbols, lineNumber)
 
-        if (resolved !in Architecture.wordRange) {
+        if (resolved < BIG_ZERO || resolved > BIG_WORD_MASK) {
             throw AssemblyException(
                 "Line $lineNumber: value '$value' resolves to $resolved, but only " +
                         "${Architecture.wordRange} is allowed"
             )
         }
 
-        return resolved
+        return resolved.toInt()
     }
 
     private fun parseAddressExpression(
@@ -933,14 +1016,14 @@ class Assembler(
     ): Int {
         val resolved = evaluateExpression(expression, symbols, lineNumber)
 
-        if (resolved !in Architecture.addressRange) {
+        if (resolved < BIG_ZERO || resolved > BIG_ADDRESS_MASK) {
             throw AssemblyException(
                 "Line $lineNumber: address '$value' resolves to $resolved, but only " +
                         "${Architecture.addressRange} is allowed"
             )
         }
 
-        return resolved
+        return resolved.toInt()
     }
 
     private fun parseExpression(value: String, lineNumber: Int): Expression =
@@ -951,7 +1034,7 @@ class Assembler(
         symbols: Symbols,
         lineNumber: Int,
         resolvingConstants: MutableSet<String> = mutableSetOf()
-    ): Int =
+    ): BigInteger =
         when (expression) {
             is Expression.Number -> expression.value
             is Expression.Symbol -> symbols.resolve(
@@ -961,16 +1044,50 @@ class Assembler(
             )
 
             is Expression.Add ->
-                evaluateExpression(expression.left, symbols, lineNumber, resolvingConstants) +
-                        evaluateExpression(expression.right, symbols, lineNumber, resolvingConstants)
+                evaluateExpression(expression.left, symbols, lineNumber, resolvingConstants)
+                    .add(evaluateExpression(expression.right, symbols, lineNumber, resolvingConstants))
 
             is Expression.Subtract ->
-                evaluateExpression(expression.left, symbols, lineNumber, resolvingConstants) -
-                        evaluateExpression(expression.right, symbols, lineNumber, resolvingConstants)
+                evaluateExpression(expression.left, symbols, lineNumber, resolvingConstants)
+                    .subtract(evaluateExpression(expression.right, symbols, lineNumber, resolvingConstants))
 
             is Expression.Negate ->
-                -evaluateExpression(expression.expression, symbols, lineNumber, resolvingConstants)
+                evaluateExpression(expression.expression, symbols, lineNumber, resolvingConstants).negate()
         }
+
+    private fun encodeNum64Directive(
+        statement: Statement.Directive,
+        symbols: Symbols
+    ): List<Int> {
+        val value = parseNum64Value(statement.arguments[0], symbols, statement.lineNumber)
+
+        return (0 until NUM64_BYTE_COUNT).map { index ->
+            value
+                .shiftRight(index * Architecture.WORD_BITS)
+                .and(BIG_WORD_MASK)
+                .toInt()
+        }
+    }
+
+    private fun parseNum64Value(
+        value: String,
+        symbols: Symbols,
+        lineNumber: Int
+    ): BigInteger {
+        if (value.trim().startsWith('"')) {
+            throw AssemblyException("Line $lineNumber: .num64 expects a numeric expression, not a file path")
+        }
+        val resolved = evaluateExpression(parseExpression(value, lineNumber), symbols, lineNumber)
+
+        if (resolved < BIG_ZERO || resolved > UNSIGNED_64_MAX) {
+            throw AssemblyException(
+                "Line $lineNumber: .num64 value '$value' resolves to $resolved, but only " +
+                        "$BIG_ZERO..$UNSIGNED_64_MAX is allowed"
+            )
+        }
+
+        return resolved
+    }
 
     private fun parseAsciiBytes(value: String, lineNumber: Int): List<Int> {
         val decoded = parseStringLiteral(value, lineNumber)
@@ -1033,7 +1150,7 @@ class Assembler(
 
     private fun readIncbinBytes(statement: Statement.Directive): List<Int> {
         val sourcePath = parseStringLiteral(statement.arguments[0], statement.lineNumber)
-        val path = resolveIncbinPath(sourcePath)
+        val path = resolveDataPath(sourcePath)
 
         return try {
             path.readBytes().map { byte -> byte.toInt() and Architecture.WORD_MASK }
@@ -1044,7 +1161,7 @@ class Assembler(
         }
     }
 
-    private fun resolveIncbinPath(sourcePath: String): Path {
+    private fun resolveDataPath(sourcePath: String): Path {
         val path = Path.of(sourcePath)
 
         return if (path.isAbsolute) {
@@ -1071,9 +1188,9 @@ class Assembler(
             name: String,
             lineNumber: Int,
             resolvingConstants: MutableSet<String>
-        ): Int {
+        ): BigInteger {
             labels[name]?.let { address ->
-                return address
+                return BigInteger.valueOf(address.toLong())
             }
 
             val constant = constants[name]
@@ -1205,7 +1322,7 @@ class Assembler(
     }
 
     private sealed interface Expression {
-        data class Number(val value: Int) : Expression
+        data class Number(val value: BigInteger) : Expression
         data class Symbol(val name: String) : Expression
         data class Add(val left: Expression, val right: Expression) : Expression
         data class Subtract(val left: Expression, val right: Expression) : Expression
@@ -1238,6 +1355,7 @@ class Assembler(
         EQU,
         ORG,
         BYTE,
+        NUM64,
         ASCII,
         STRING,
         INCBIN
@@ -1276,20 +1394,39 @@ class Assembler(
             Regex("""^\[(.+)]$""")
 
         private const val ASCII_MAX = 0x7F
+        private const val NUM64_BYTE_COUNT = 8
         private const val REGISTER_COUNT = Architecture.REGISTER_COUNT
         private const val ADDRESS_REGISTER_COUNT = Architecture.ADDRESS_REGISTER_COUNT
+        private val BIG_ZERO = BigInteger.ZERO
+        private val BIG_WORD_MASK = BigInteger.valueOf(Architecture.WORD_MASK.toLong())
+        private val BIG_ADDRESS_MASK = BigInteger.valueOf(Architecture.ADDRESS_MASK.toLong())
+        private val UNSIGNED_64_MAX = BigInteger.ONE
+            .shiftLeft(64)
+            .subtract(BigInteger.ONE)
 
-        private fun parseNumberLiteral(value: String): Int? =
-            when {
-                value.startsWith("0x", ignoreCase = true) ->
-                    value.drop(2).toIntOrNull(16)
+        private fun parseNumberLiteral(value: String): BigInteger? =
+            try {
+                when {
+                    value.startsWith("0x", ignoreCase = true) ->
+                        parseBigInteger(value.drop(2), 16)
 
-                value.startsWith("0b", ignoreCase = true) ->
-                    value.drop(2).toIntOrNull(2)
+                    value.startsWith("0b", ignoreCase = true) ->
+                        parseBigInteger(value.drop(2), 2)
 
-                else ->
-                    value.toIntOrNull()
+                    else ->
+                        parseBigInteger(value, 10)
+                }
+            } catch (_: NumberFormatException) {
+                null
             }
+
+        private fun parseBigInteger(value: String, radix: Int): BigInteger? {
+            if (value.isBlank()) {
+                return null
+            }
+
+            return BigInteger(value, radix)
+        }
     }
 }
 

@@ -13,7 +13,7 @@ Die Sprache kennt aktuell:
 - Labels und `;`-Kommentare.
 - Dezimale, hexadezimale und binaere Zahlenliterale.
 - Konstanten, Datenlayout und kleine Ausdruecke:
-  - `.equ`, `.org`, `.byte`, `.ascii`, `.string`, `.incbin`
+  - `.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, `.incbin`
   - `end - start`
   - `[buffer + 1]`
 - Vier allgemeine Register: `R0` bis `R3`.
@@ -27,8 +27,10 @@ Die Sprache kennt aktuell:
   - `DECA A0`
 - Arithmetik:
   - `ADD`
+  - `ADC`
   - `ADDI`
   - `SUB`
+  - `SBC`
   - `SUBI`
   - `INC`
   - `DEC`
@@ -60,7 +62,14 @@ Die Sprache kennt aktuell:
   - `LOAD R0, [A0]`
 - Stack und Funktionsaufrufe:
   - `PUSH`
+  - `PUSHI`
+  - `PUSHA`
   - `POP`
+  - `DROP`
+  - `PEEK`
+  - `PEEKA`
+  - `PUSHF`
+  - `POPF`
   - `CALL`
   - `RET`
 - Ausgabe und Programmende:
@@ -86,11 +95,18 @@ Der aktuelle VM-Stand trifft bereits ein paar Architekturentscheidungen:
 - `SP` bleibt interner VM-Zustand und wird im Debugger gezeigt, nicht als
   KASM-Register exponiert.
 - `CALL` legt die Ruecksprungadresse auf denselben Stack wie `PUSH`.
+- Funktionsparameter werden explizit vor `CALL` auf den Stack gelegt; der
+  Callee liest sie mit `PEEK`/`PEEKA`, der Caller raeumt sie mit `DROP` auf.
+- `PUSHA` legt 16-bit-Adressparameter als zwei Bytes auf den Stack und erlaubt
+  variable viele Pointer-Parameter pro Funktion.
+- `PUSHF` und `POPF` speichern Zero, Sign, Carry und Overflow als ein Byte auf
+  dem Stack und machen Carry-Ketten in Schleifen nutzbar.
 - `R0` ist in der dokumentierten Call-Konvention primaerer Eingabe- und
   Rueckgabewert; Callees sichern modifizierte `R1` bis `R3`.
 - `CMP` veraendert keine Register, sondern setzt Zero-, Sign-, Carry- und
   Overflow-Flag.
-- `ADD`, `SUB`, `INC` und `DEC` aktualisieren dieselben Ergebnis-Flags.
+- `ADD`, `ADC`, `SUB`, `SBC`, `INC` und `DEC` aktualisieren dieselben
+  Ergebnis-Flags; `ADC` nutzt Carry als Carry-in, `SBC` als Borrow-in.
 - `ADDI`, `SUBI`, `MUL`, `DIV`, `MOD`, `NEG` sowie die Bit-Operationen sind
   Teil des aktuellen Instruktionssatzes.
 - `JE` und `JNE` lesen das Zero-Flag; `JG`, `JGE`, `JL` und `JLE` sind signed
@@ -108,6 +124,15 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
 - `examples/memory-strings.kasm` zeigt `.string` und indizierte String-Iteration.
 - `examples/ascii-print.kasm` zeigt `A0`, high memory und `PRINTC`.
 - `examples/incbin-print.kasm` zeigt `.incbin` mit dateibasierten Rohbytes.
+- `examples/wide-add64.kasm`, `examples/wide-sub64.kasm`,
+  `examples/wide-incdec64.kasm` und `examples/wide-mul8x64.kasm` zeigen
+  64-bit-Arithmetik mit 8-bit-Registern, `ADC` und `SBC`.
+- `examples/num64-arithmetic.kasm` zeigt `.num64`, explizite Stack-Parameter
+  und 64-bit-Add/Sub/Mul/Div/Mod-Routinen.
+- `examples/num64-parse-decimal-file.kasm` liest ASCII-Ziffern mit `.incbin`
+  und parst sie zur Laufzeit in einen `.num64`-Speicherbereich.
+- `examples/num64-varargs.kasm` zeigt variable viele Stack-Parameter mit
+  `PUSHI`, `PUSHA`, `PEEK` und `PEEKA`.
 - `examples/aoc-2025-day1-sample.kasm` zeigt einen kleinen ASCII-Parser mit
   `CALL`/`RET` fuer Advent of Code 2025 Day 1.
 - `examples/stack-calls.kasm` zeigt verschachtelte `CALL`/`RET` und gesicherte Register.
@@ -215,7 +240,8 @@ hat der Assembler jetzt Namen, Datenbereiche und kleine Ausdruecke:
 
 - `.equ` definiert Konstanten.
 - `.org` bewegt den Cursor fuer das initiale Daten-Memory-Bild.
-- `.byte`, `.ascii` und `.string` initialisieren benannte Datenzellen.
+- `.byte`, `.num64`, `.ascii` und `.string` initialisieren benannte Datenzellen.
+- `.num64` schreibt unsigned 64-bit-Zahlen als acht little-endian Bytes.
 - `.incbin` bettet externe Rohbytes relativ zur Quelldatei ein.
 - Datenlabels werden als direkte Memory-Adressen benutzt, Code-Labels bleiben
   Bytecode-Adressen.
@@ -234,6 +260,10 @@ Neue Opcodes sollten dann zuerst Programme kuerzer oder klarer machen, die mit
 dem aktuellen Kern bereits moeglich sind. Dieser Block ist umgesetzt:
 
 - Immediate-Arithmetik: `ADDI`, `SUBI`.
+- Carry-Arithmetik fuer Multi-Byte-Zahlen: `ADC`, `SBC`.
+- Flag-Stack fuer Carry-Schleifen: `PUSHF`, `POPF`.
+- Stack-Parameter und Stack-Inspektion: `PUSHI`, `PUSHA`, `DROP`, `PEEK`,
+  `PEEKA`.
 - Weitere Arithmetik: `MUL`, `DIV`, `MOD`, `NEG`.
 - Bit-Operationen: `AND`, `OR`, `XOR`, `NOT`.
 - Weitere signed Flag-Spruenge: `JGE`, `JLE`.
@@ -339,6 +369,8 @@ Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
   - dieselben Loader-Optionen fuer `kasm debug`
   - optional Nullterminator anhaengen fuer textbasierte Parser
 - Pseudo-Instruktionen mit Expansion im Assembler.
+- Weitere Flag-Kontrolle fuer generische Multi-Byte-Routinen, falls die
+  Beispiele sie brauchen: `CLC`/`SEC` oder unsigned Vergleichsspruenge.
 - Komplexere Adressierung mit mehr als einem Laufzeitregister, falls reale
   Beispiele sie brauchen.
 - Bessere I/O:

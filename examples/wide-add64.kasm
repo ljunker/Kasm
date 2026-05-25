@@ -1,0 +1,70 @@
+; Add two unsigned 64-bit values stored as little-endian bytes.
+; 0x00000001000000FF + 0x0000000000000002 = 0x0000000100000101.
+; Output is the result from high byte to low byte:
+; 0, 0, 0, 1, 0, 0, 1, 1.
+; The add chain is straight-line code so no counter instruction overwrites Carry.
+  .org 0x1500
+left0:
+  .num64 0x00000001000000FF
+right0:
+  .num64 2
+sum0:
+  .num64 0
+
+  LOAD R0, [left0]
+  LOAD R1, [right0]
+  ADD R0, R1
+  STORE [sum0], R0
+
+  LOAD R0, [left0 + 1]
+  LOAD R1, [right0 + 1]
+  ADC R0, R1
+  STORE [sum0 + 1], R0
+
+  LOAD R0, [left0 + 2]
+  LOAD R1, [right0 + 2]
+  ADC R0, R1
+  STORE [sum0 + 2], R0
+
+  LOAD R0, [left0 + 3]
+  LOAD R1, [right0 + 3]
+  ADC R0, R1
+  STORE [sum0 + 3], R0
+
+  LOAD R0, [left0 + 4]
+  LOAD R1, [right0 + 4]
+  ADC R0, R1
+  STORE [sum0 + 4], R0
+
+  LOAD R0, [left0 + 5]
+  LOAD R1, [right0 + 5]
+  ADC R0, R1
+  STORE [sum0 + 5], R0
+
+  LOAD R0, [left0 + 6]
+  LOAD R1, [right0 + 6]
+  ADC R0, R1
+  STORE [sum0 + 6], R0
+
+  LOAD R0, [left0 + 7]
+  LOAD R1, [right0 + 7]
+  ADC R0, R1
+  STORE [sum0 + 7], R0
+
+  LOAD R0, [sum0 + 7]
+  PRINT R0
+  LOAD R0, [sum0 + 6]
+  PRINT R0
+  LOAD R0, [sum0 + 5]
+  PRINT R0
+  LOAD R0, [sum0 + 4]
+  PRINT R0
+  LOAD R0, [sum0 + 3]
+  PRINT R0
+  LOAD R0, [sum0 + 2]
+  PRINT R0
+  LOAD R0, [sum0 + 1]
+  PRINT R0
+  LOAD R0, [sum0]
+  PRINT R0
+  HALT

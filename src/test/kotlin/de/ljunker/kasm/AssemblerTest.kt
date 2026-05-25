@@ -273,6 +273,103 @@ class AssemblerTest {
     }
 
     @Test
+    fun initializesNum64DataAsLittleEndianBytes() {
+        val program = Assembler().assemble(
+            """
+            .org 0x2000
+            literal:
+              .num64 0x0102030405060708
+            literal_end:
+            decimal:
+              .num64 655361234
+
+              MOV R0, literal_end - literal
+              HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.MOV.code, 0, 8,
+                Opcode.HALT.code
+            ).bytes,
+            program.bytes
+        )
+        assertEquals(
+            mapOf(
+                0x2000 to 0x08,
+                0x2001 to 0x07,
+                0x2002 to 0x06,
+                0x2003 to 0x05,
+                0x2004 to 0x04,
+                0x2005 to 0x03,
+                0x2006 to 0x02,
+                0x2007 to 0x01,
+                0x2008 to 0xD2,
+                0x2009 to 0x04,
+                0x200A to 0x10,
+                0x200B to 0x27,
+                0x200C to 0,
+                0x200D to 0,
+                0x200E to 0,
+                0x200F to 0
+            ),
+            program.initialMemory
+        )
+    }
+
+    @Test
+    fun rejectsNum64FilePathArguments() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble(".num64 \"data/value.txt\"")
+        }
+
+        assertEquals(
+            "Line 1: .num64 expects a numeric expression, not a file path",
+            exception.message
+        )
+    }
+
+    @Test
+    fun assemblesExplicitStackParameterInstructions() {
+        val program = Assembler().assemble(
+            """
+            MOVA A0, buffer
+            PUSHA A0
+            PUSHA buffer
+            PUSHI 3
+            CALL target
+            DROP 5
+            target:
+              PEEKA A1, 2
+              PEEK R0, R1
+              DROP R0
+              HALT
+
+            .org 0x1200
+            buffer:
+              .byte 0
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.MOVA.code, 0, 0x00, 0x12,
+                Opcode.PUSHA_REGISTER.code, 0,
+                Opcode.PUSHA.code, 0x00, 0x12,
+                Opcode.PUSHI.code, 3,
+                Opcode.CALL.code, 16, 0,
+                Opcode.DROP.code, 5,
+                Opcode.PEEKA.code, 1, 2,
+                Opcode.PEEK_REGISTER_OFFSET.code, 0, 1,
+                Opcode.DROP_REGISTER.code, 0,
+                Opcode.HALT.code
+            ).bytes,
+            program.bytes
+        )
+    }
+
+    @Test
     fun embedsBinaryFilesRelativeToTheAssemblerBaseDirectory() {
         val baseDirectory = createTempDirectory("kasm-incbin")
         baseDirectory.resolve("blob.bin").writeBytes(byteArrayOf(0, 65, -1))

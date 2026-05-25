@@ -73,11 +73,11 @@ Implemented instruction groups:
 | Area                  | Instructions                                      |
 |-----------------------|---------------------------------------------------|
 | Data movement         | `MOV`, `MOVA`, `LOAD`, `STORE`, `CLR`             |
-| Arithmetic            | `ADD`, `ADDI`, `SUB`, `SUBI`, `INC`, `DEC`, `MUL`, `DIV`, `MOD`, `NEG` |
+| Arithmetic            | `ADD`, `ADC`, `ADDI`, `SUB`, `SBC`, `SUBI`, `INC`, `DEC`, `MUL`, `DIV`, `MOD`, `NEG` |
 | Bit operations        | `AND`, `OR`, `XOR`, `NOT`                         |
 | Comparisons and flags | `CMP`, `JE`, `JNE`, `JG`, `JGE`, `JL`, `JLE`      |
 | Register-based jumps  | `JMP`, `JZ`, `JNZ`                                |
-| Stack and calls       | `PUSH`, `POP`, `CALL`, `RET`                      |
+| Stack and calls       | `PUSH`, `PUSHI`, `PUSHA`, `POP`, `DROP`, `PEEK`, `PEEKA`, `PUSHF`, `POPF`, `CALL`, `RET` |
 | Address arithmetic    | `INCA`, `DECA`                                    |
 | Output and stop       | `PRINT`, `PRINTC`, `NOP`, `HALT`                  |
 
@@ -109,8 +109,10 @@ print_result:
   HALT
 ```
 
-The VM tracks Zero, Sign, Carry, and Overflow flags. `JG` and `JL` are signed
-flag jumps; `JZ` and `JNZ` test a register value directly.
+The VM tracks Zero, Sign, Carry, and Overflow flags. `ADC` consumes Carry as a
+carry-in bit, and `SBC` consumes it as a borrow-in bit, so byte-sized registers
+can be chained into larger integer operations. `JG` and `JL` are signed flag
+jumps; `JZ` and `JNZ` test a register value directly.
 
 ## Memory
 
@@ -149,12 +151,13 @@ print:
   RET
 ```
 
-`.equ`, `.org`, `.byte`, `.ascii`, `.string`, and `.incbin` provide a small data
-layout language. Byte operands and direct memory addresses accept expressions
-such as `copy - source` and `[source + 1]`. Direct memory addresses, jump
-targets, and `.org` use 16-bit addresses, so data can live above address `255`.
-`.incbin "path"` embeds raw file bytes at assembly time; relative paths are
-resolved from the source file's directory in the CLI.
+`.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, and `.incbin` provide a
+small data layout language. Byte operands and direct memory addresses accept
+expressions such as `copy - source` and `[source + 1]`. Direct memory addresses,
+jump targets, and `.org` use 16-bit addresses, so data can live above address
+`255`. `.num64 655361234` reserves eight data-memory cells and stores the value
+as little-endian bytes. `.incbin "path"` embeds raw file bytes at assembly time;
+relative paths are resolved from the source file's directory in the CLI.
 
 `LOAD` and `STORE` also accept one-register indexed forms such as `[R2]`,
 `[name + R2]`, and `[R2 + 4]`, plus address-register pointer forms such as
@@ -184,13 +187,15 @@ Programs can use `PUSH` and `POP` on the same stack to save register values
 around nested calls.
 
 ```kasm
-; Print triple(6) with nested CALL/RET and saved registers.
-  MOV R0, 6
+; Print triple(6) with explicit stack arguments.
+  PUSHI 6
   CALL triple
+  DROP 1
   PRINT R0
   HALT
 
 triple:
+  PEEK R0, 2
   PUSH R1
   MOV R1, R0
   CALL double
@@ -210,6 +215,12 @@ The stack lives in data memory and grows downward from the high end of the
 65536-cell memory space. The stack pointer is debugger-visible VM state, not a
 KASM register. The examples use `R0` for the primary input and return value;
 functions save and restore `R1` through `R3` when they modify them.
+Stack arguments are explicit: push them before `CALL`, read them in the callee
+with `PEEK` or `PEEKA`, and clean them up in the caller with `DROP` after
+`RET`. `PUSHA` pushes a 16-bit address argument, so a function can receive
+memory pointers or any variable number of pointer parameters. `PUSHF` and
+`POPF` save and restore Zero, Sign, Carry, and Overflow, which is useful for
+loops around `ADC`/`SBC` carry chains.
 
 ## Install The CLI
 
@@ -317,6 +328,13 @@ location for it.
 | `examples/memory-strings.kasm` | `.string` and indexed string iteration       | `75`, `65`, `83`, `77` |
 | `examples/ascii-print.kasm`    | `A0`, high memory, and `PRINTC`              | `KASM`                 |
 | `examples/incbin-print.kasm`   | `.incbin` file data and `PRINTC`             | `INCBIN`               |
+| `examples/wide-add64.kasm`     | 64-bit addition with `ADC`                   | bytes of `0x0000000100000101` |
+| `examples/wide-sub64.kasm`     | 64-bit subtraction with `SBC`                | bytes of `0x00000001000000FF` |
+| `examples/wide-incdec64.kasm`  | 64-bit increment and decrement               | bytes before and after borrow |
+| `examples/wide-mul8x64.kasm`   | 64-bit repeated addition with `ADC`          | bytes of `1500`        |
+| `examples/num64-arithmetic.kasm` | `.num64`, stack arguments, 64-bit add/sub/mul/div/mod | bytes of each result |
+| `examples/num64-parse-decimal-file.kasm` | `.incbin` text input parsed into `.num64` | bytes of `655361234` |
+| `examples/num64-varargs.kasm` | variable argument count via `PUSHI`, `PUSHA`, `PEEK`, `PEEKA` | bytes of `342` |
 | `examples/aoc-2025-day1-sample.kasm` | parsing ASCII data with `CALL`/`RET`  | `3`                    |
 | `examples/stack-calls.kasm`    | nested calls and saved registers             | `18`                   |
 

@@ -88,11 +88,25 @@ class VirtualMachine(
                 addToRegister(target, registers[source])
             }
 
+            Opcode.ADC -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                addToRegister(target, registers[source], carryIn = carryFlagBit())
+            }
+
             Opcode.SUB -> {
                 val target = readRegister(program)
                 val source = readRegister(program)
 
                 subtractFromRegister(target, registers[source])
+            }
+
+            Opcode.SBC -> {
+                val target = readRegister(program)
+                val source = readRegister(program)
+
+                subtractFromRegister(target, registers[source], borrowIn = carryFlagBit())
             }
 
             Opcode.INC -> {
@@ -224,6 +238,81 @@ class VirtualMachine(
                 val register = readRegister(program)
 
                 registers[register] = pop()
+            }
+
+            Opcode.PUSHF -> {
+                push(encodeFlags())
+            }
+
+            Opcode.POPF -> {
+                decodeFlags(pop())
+            }
+
+            Opcode.PUSHI -> {
+                val value = readByte(program)
+
+                push(value)
+            }
+
+            Opcode.PUSHA -> {
+                val address = readAddress(program)
+
+                pushAddress(address)
+            }
+
+            Opcode.PUSHA_REGISTER -> {
+                val register = readAddressRegister(program)
+
+                pushAddress(addressRegisters[register])
+            }
+
+            Opcode.DROP -> {
+                val count = readByte(program)
+
+                repeat(count) {
+                    pop()
+                }
+            }
+
+            Opcode.DROP_REGISTER -> {
+                val register = readRegister(program)
+
+                repeat(registers[register]) {
+                    pop()
+                }
+            }
+
+            Opcode.PEEK -> {
+                val register = readRegister(program)
+                val offset = readByte(program)
+
+                registers[register] = peekStack(offset)
+            }
+
+            Opcode.PEEK_REGISTER_OFFSET -> {
+                val register = readRegister(program)
+                val offsetRegister = readRegister(program)
+
+                registers[register] = peekStack(registers[offsetRegister])
+            }
+
+            Opcode.PEEKA -> {
+                val register = readAddressRegister(program)
+                val offset = readByte(program)
+                val low = peekStack(offset)
+                val high = peekStack(offset + 1)
+
+                addressRegisters[register] = low or (high shl Architecture.WORD_BITS)
+            }
+
+            Opcode.PEEKA_REGISTER_OFFSET -> {
+                val register = readAddressRegister(program)
+                val offsetRegister = readRegister(program)
+                val offset = registers[offsetRegister]
+                val low = peekStack(offset)
+                val high = peekStack(offset + 1)
+
+                addressRegisters[register] = low or (high shl Architecture.WORD_BITS)
             }
 
             Opcode.CALL -> {
@@ -527,6 +616,16 @@ class VirtualMachine(
         return memory[stackPointer++]
     }
 
+    private fun peekStack(offset: Int): Int {
+        val address = stackPointer + offset
+
+        if (address !in stackPointer until MEMORY_SIZE) {
+            throw VmException("Stack offset out of bounds: $offset")
+        }
+
+        return memory[address]
+    }
+
     private fun popAddress(): Int {
         if (stackPointer > MEMORY_SIZE - 2) {
             throw VmException("Stack underflow")
@@ -538,35 +637,60 @@ class VirtualMachine(
         return low or (high shl Architecture.WORD_BITS)
     }
 
-    private fun addToRegister(register: Int, value: Int) {
+    private fun encodeFlags(): Int {
+        var value = 0
+
+        if (zeroFlag) value = value or ZERO_FLAG_BIT
+        if (signFlag) value = value or SIGN_FLAG_BIT
+        if (carryFlag) value = value or CARRY_FLAG_BIT
+        if (overflowFlag) value = value or OVERFLOW_FLAG_BIT
+
+        return value
+    }
+
+    private fun decodeFlags(value: Int) {
+        zeroFlag = value and ZERO_FLAG_BIT != 0
+        signFlag = value and SIGN_FLAG_BIT != 0
+        carryFlag = value and CARRY_FLAG_BIT != 0
+        overflowFlag = value and OVERFLOW_FLAG_BIT != 0
+    }
+
+    private fun addToRegister(register: Int, value: Int, carryIn: Int = 0) {
         val left = registers[register]
-        val rawResult = left + value
+        val rawResult = left + value + carryIn
         val result = Architecture.normalizeWord(rawResult)
+        val signedResult = Architecture.toSignedWord(left) +
+                Architecture.toSignedWord(value) +
+                carryIn
 
         registers[register] = result
         updateResultFlags(result)
         carryFlag = rawResult > Architecture.WORD_MASK
-        overflowFlag = Architecture.hasSignBit(left) == Architecture.hasSignBit(value) &&
-                Architecture.hasSignBit(left) != Architecture.hasSignBit(result)
+        overflowFlag = signedResult !in SIGNED_WORD_RANGE
     }
 
-    private fun subtractFromRegister(register: Int, value: Int) {
+    private fun subtractFromRegister(register: Int, value: Int, borrowIn: Int = 0) {
         val left = registers[register]
 
-        registers[register] = updateSubtractionFlags(left, value)
+        registers[register] = updateSubtractionFlags(left, value, borrowIn)
     }
 
-    private fun updateSubtractionFlags(left: Int, right: Int): Int {
-        val rawResult = left - right
+    private fun updateSubtractionFlags(left: Int, right: Int, borrowIn: Int = 0): Int {
+        val rawResult = left - right - borrowIn
         val result = Architecture.normalizeWord(rawResult)
+        val signedResult = Architecture.toSignedWord(left) -
+                Architecture.toSignedWord(right) -
+                borrowIn
 
         updateResultFlags(result)
         carryFlag = rawResult < 0
-        overflowFlag = Architecture.hasSignBit(left) != Architecture.hasSignBit(right) &&
-                Architecture.hasSignBit(left) != Architecture.hasSignBit(result)
+        overflowFlag = signedResult !in SIGNED_WORD_RANGE
 
         return result
     }
+
+    private fun carryFlagBit(): Int =
+        if (carryFlag) 1 else 0
 
     private fun updateResultFlags(result: Int) {
         zeroFlag = result == 0
@@ -594,6 +718,10 @@ class VirtualMachine(
         private const val ADDRESS_REGISTER_COUNT = Architecture.ADDRESS_REGISTER_COUNT
         private const val MEMORY_SIZE = Architecture.MEMORY_SIZE
         private const val ASCII_MAX = 0x7F
+        private const val ZERO_FLAG_BIT = 0x01
+        private const val SIGN_FLAG_BIT = 0x02
+        private const val CARRY_FLAG_BIT = 0x04
+        private const val OVERFLOW_FLAG_BIT = 0x08
         private val SIGNED_WORD_RANGE = -Architecture.WORD_SIGN_BIT until Architecture.WORD_SIGN_BIT
     }
 }

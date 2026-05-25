@@ -49,6 +49,19 @@ enum class Opcode(
     DECA(0x2A, "DECA", OperandType.ADDRESS_REGISTER),
     LOAD_ADDRESS_REGISTER(0x2B, "LOAD", OperandType.REGISTER, OperandType.ADDRESS_REGISTER),
     STORE_ADDRESS_REGISTER(0x2C, "STORE", OperandType.ADDRESS_REGISTER, OperandType.REGISTER),
+    ADC(0x2D, "ADC", OperandType.REGISTER, OperandType.REGISTER),
+    SBC(0x2E, "SBC", OperandType.REGISTER, OperandType.REGISTER),
+    PUSHF(0x2F, "PUSHF"),
+    POPF(0x30, "POPF"),
+    PUSHI(0x31, "PUSHI", OperandType.BYTE_VALUE),
+    DROP(0x32, "DROP", OperandType.BYTE_VALUE),
+    PEEK(0x33, "PEEK", OperandType.REGISTER, OperandType.BYTE_VALUE),
+    PEEKA(0x34, "PEEKA", OperandType.ADDRESS_REGISTER, OperandType.BYTE_VALUE),
+    PUSHA(0x35, "PUSHA", OperandType.ADDRESS_VALUE),
+    PUSHA_REGISTER(0x36, "PUSHA", OperandType.ADDRESS_REGISTER),
+    DROP_REGISTER(0x37, "DROP", OperandType.REGISTER),
+    PEEK_REGISTER_OFFSET(0x38, "PEEK", OperandType.REGISTER, OperandType.REGISTER),
+    PEEKA_REGISTER_OFFSET(0x39, "PEEKA", OperandType.ADDRESS_REGISTER, OperandType.REGISTER),
     HALT(0xFF, "HALT");
 
     val operandTypes: List<OperandType> = operandTypes.toList()

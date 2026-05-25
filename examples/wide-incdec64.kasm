@@ -1,0 +1,88 @@
+; Increment and decrement an unsigned 64-bit value.
+; Starts at 0x00000000FFFFFFFF.
+; Increment gives 0x0000000100000000, decrement returns to 0x00000000FFFFFFFF.
+; Output is high byte to low byte after increment, then after decrement.
+; The carry/borrow chains are straight-line code so Carry survives each byte.
+  .org 0x1540
+value0:
+  .num64 0x00000000FFFFFFFF
+
+  MOV R1, 1
+  LOAD R0, [value0]
+  ADD R0, R1
+  STORE [value0], R0
+
+  MOV R1, 0
+  LOAD R0, [value0 + 1]
+  ADC R0, R1
+  STORE [value0 + 1], R0
+  LOAD R0, [value0 + 2]
+  ADC R0, R1
+  STORE [value0 + 2], R0
+  LOAD R0, [value0 + 3]
+  ADC R0, R1
+  STORE [value0 + 3], R0
+  LOAD R0, [value0 + 4]
+  ADC R0, R1
+  STORE [value0 + 4], R0
+  LOAD R0, [value0 + 5]
+  ADC R0, R1
+  STORE [value0 + 5], R0
+  LOAD R0, [value0 + 6]
+  ADC R0, R1
+  STORE [value0 + 6], R0
+  LOAD R0, [value0 + 7]
+  ADC R0, R1
+  STORE [value0 + 7], R0
+
+  CALL print_value
+
+  MOV R1, 1
+  LOAD R0, [value0]
+  SUB R0, R1
+  STORE [value0], R0
+
+  MOV R1, 0
+  LOAD R0, [value0 + 1]
+  SBC R0, R1
+  STORE [value0 + 1], R0
+  LOAD R0, [value0 + 2]
+  SBC R0, R1
+  STORE [value0 + 2], R0
+  LOAD R0, [value0 + 3]
+  SBC R0, R1
+  STORE [value0 + 3], R0
+  LOAD R0, [value0 + 4]
+  SBC R0, R1
+  STORE [value0 + 4], R0
+  LOAD R0, [value0 + 5]
+  SBC R0, R1
+  STORE [value0 + 5], R0
+  LOAD R0, [value0 + 6]
+  SBC R0, R1
+  STORE [value0 + 6], R0
+  LOAD R0, [value0 + 7]
+  SBC R0, R1
+  STORE [value0 + 7], R0
+
+  CALL print_value
+  HALT
+
+print_value:
+  LOAD R0, [value0 + 7]
+  PRINT R0
+  LOAD R0, [value0 + 6]
+  PRINT R0
+  LOAD R0, [value0 + 5]
+  PRINT R0
+  LOAD R0, [value0 + 4]
+  PRINT R0
+  LOAD R0, [value0 + 3]
+  PRINT R0
+  LOAD R0, [value0 + 2]
+  PRINT R0
+  LOAD R0, [value0 + 1]
+  PRINT R0
+  LOAD R0, [value0]
+  PRINT R0
+  RET

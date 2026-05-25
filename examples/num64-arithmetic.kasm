@@ -1,0 +1,239 @@
+; Generic unsigned 64-bit arithmetic over two .num64 values.
+; The sample values are small so repeated-addition multiplication and
+; repeated-subtraction division finish quickly:
+;   300 + 37 = 337
+;   300 - 37 = 263
+;   300 * 37 = 11100
+;   300 / 37 = 8
+;   300 % 37 = 4
+; Each result is printed as 8 bytes from high byte to low byte.
+  .org 0x1600
+left:
+  .num64 300
+right:
+  .num64 37
+one:
+  .num64 1
+sum:
+  .num64 0
+diff:
+  .num64 0
+product:
+  .num64 0
+quotient:
+  .num64 0
+remainder:
+  .num64 0
+right_work:
+  .num64 0
+temp:
+  .num64 0
+
+  PUSHA sum
+  PUSHA left
+  CALL copy64
+  DROP 4
+  PUSHA right
+  PUSHA sum
+  CALL add64
+  DROP 4
+  PUSHA sum
+  CALL print64
+  DROP 2
+
+  PUSHA diff
+  PUSHA left
+  CALL copy64
+  DROP 4
+  PUSHA right
+  PUSHA diff
+  CALL sub64
+  DROP 4
+  PUSHA diff
+  CALL print64
+  DROP 2
+
+  PUSHA product
+  CALL clear64
+  DROP 2
+  PUSHA right_work
+  PUSHA right
+  CALL copy64
+  DROP 4
+multiply_loop:
+  PUSHA right_work
+  CALL is_zero64
+  DROP 2
+  JNZ R0, multiply_done
+  PUSHA left
+  PUSHA product
+  CALL add64
+  DROP 4
+  PUSHA one
+  PUSHA right_work
+  CALL sub64
+  DROP 4
+  JMP multiply_loop
+multiply_done:
+  PUSHA product
+  CALL print64
+  DROP 2
+
+  PUSHA quotient
+  CALL clear64
+  DROP 2
+  PUSHA remainder
+  PUSHA left
+  CALL copy64
+  DROP 4
+divide_loop:
+  PUSHA temp
+  PUSHA remainder
+  CALL copy64
+  DROP 4
+  PUSHA right
+  PUSHA temp
+  CALL sub64
+  DROP 4
+  MOV R3, 0
+  SBC R3, R3
+  JNZ R3, divide_done
+  PUSHA remainder
+  PUSHA temp
+  CALL copy64
+  DROP 4
+  PUSHA one
+  PUSHA quotient
+  CALL add64
+  DROP 4
+  JMP divide_loop
+divide_done:
+  PUSHA quotient
+  CALL print64
+  DROP 2
+  PUSHA remainder
+  CALL print64
+  DROP 2
+  HALT
+
+copy64:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  MOV R2, 8
+copy64_loop:
+  LOAD R0, [A0]
+  STORE [A1], R0
+  INCA A0
+  INCA A1
+  DEC R2
+  JNZ R2, copy64_loop
+  POP R2
+  RET
+
+clear64:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 8
+  CLR R0
+clear64_loop:
+  STORE [A0], R0
+  INCA A0
+  DEC R2
+  JNZ R2, clear64_loop
+  POP R2
+  RET
+
+is_zero64:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 8
+is_zero64_loop:
+  LOAD R0, [A0]
+  JNZ R0, is_zero64_no
+  INCA A0
+  DEC R2
+  JNZ R2, is_zero64_loop
+  MOV R0, 1
+  POP R2
+  RET
+is_zero64_no:
+  CLR R0
+  POP R2
+  RET
+
+add64:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  PUSH R3
+  MOV R2, 8
+  CLR R3
+add64_loop:
+  LOAD R0, [A0]
+  LOAD R1, [A1]
+  JZ R3, add64_low_byte
+  ADC R0, R1
+  JMP add64_store
+add64_low_byte:
+  ADD R0, R1
+  MOV R3, 1
+add64_store:
+  STORE [A0], R0
+  INCA A0
+  INCA A1
+  PUSHF
+  DEC R2
+  POPF
+  JNZ R2, add64_loop
+  POP R3
+  POP R2
+  RET
+
+sub64:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  PUSH R3
+  MOV R2, 8
+  CLR R3
+sub64_loop:
+  LOAD R0, [A0]
+  LOAD R1, [A1]
+  JZ R3, sub64_low_byte
+  SBC R0, R1
+  JMP sub64_store
+sub64_low_byte:
+  SUB R0, R1
+  MOV R3, 1
+sub64_store:
+  STORE [A0], R0
+  INCA A0
+  INCA A1
+  PUSHF
+  DEC R2
+  POPF
+  JNZ R2, sub64_loop
+  POP R3
+  POP R2
+  RET
+
+print64:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 7
+print64_seek_end:
+  INCA A0
+  DEC R2
+  JNZ R2, print64_seek_end
+  MOV R2, 8
+print64_loop:
+  LOAD R0, [A0]
+  PRINT R0
+  DEC R2
+  JZ R2, print64_done
+  DECA A0
+  JNZ R2, print64_loop
+print64_done:
+  POP R2
+  RET

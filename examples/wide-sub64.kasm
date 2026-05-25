@@ -1,0 +1,70 @@
+; Subtract two unsigned 64-bit values stored as little-endian bytes.
+; 0x0000000100000101 - 0x0000000000000002 = 0x00000001000000FF.
+; Output is the result from high byte to low byte:
+; 0, 0, 0, 1, 0, 0, 0, 255.
+; The subtract chain is straight-line code so no counter instruction overwrites Carry.
+  .org 0x1520
+left0:
+  .num64 0x0000000100000101
+right0:
+  .num64 2
+diff0:
+  .num64 0
+
+  LOAD R0, [left0]
+  LOAD R1, [right0]
+  SUB R0, R1
+  STORE [diff0], R0
+
+  LOAD R0, [left0 + 1]
+  LOAD R1, [right0 + 1]
+  SBC R0, R1
+  STORE [diff0 + 1], R0
+
+  LOAD R0, [left0 + 2]
+  LOAD R1, [right0 + 2]
+  SBC R0, R1
+  STORE [diff0 + 2], R0
+
+  LOAD R0, [left0 + 3]
+  LOAD R1, [right0 + 3]
+  SBC R0, R1
+  STORE [diff0 + 3], R0
+
+  LOAD R0, [left0 + 4]
+  LOAD R1, [right0 + 4]
+  SBC R0, R1
+  STORE [diff0 + 4], R0
+
+  LOAD R0, [left0 + 5]
+  LOAD R1, [right0 + 5]
+  SBC R0, R1
+  STORE [diff0 + 5], R0
+
+  LOAD R0, [left0 + 6]
+  LOAD R1, [right0 + 6]
+  SBC R0, R1
+  STORE [diff0 + 6], R0
+
+  LOAD R0, [left0 + 7]
+  LOAD R1, [right0 + 7]
+  SBC R0, R1
+  STORE [diff0 + 7], R0
+
+  LOAD R0, [diff0 + 7]
+  PRINT R0
+  LOAD R0, [diff0 + 6]
+  PRINT R0
+  LOAD R0, [diff0 + 5]
+  PRINT R0
+  LOAD R0, [diff0 + 4]
+  PRINT R0
+  LOAD R0, [diff0 + 3]
+  PRINT R0
+  LOAD R0, [diff0 + 2]
+  PRINT R0
+  LOAD R0, [diff0 + 1]
+  PRINT R0
+  LOAD R0, [diff0]
+  PRINT R0
+  HALT

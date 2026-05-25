@@ -80,6 +80,7 @@ executes:
 | `.equ NAME, expr` | Define a symbol whose value is computed from an expression. |
 | `.org expr`       | Move the data-memory layout cursor to address `expr`.       |
 | `.byte expr, ...` | Initialize one data-memory cell per byte expression.        |
+| `.num64 expr`     | Initialize eight little-endian cells from an unsigned 64-bit expression. |
 | `.ascii "text"`   | Initialize one cell per ASCII byte without a terminator.    |
 | `.string "text"`  | Initialize ASCII bytes followed by one zero byte.           |
 | `.incbin "path"`  | Initialize one cell per byte read from a binary file.       |
@@ -96,8 +97,9 @@ the source file directory when using the CLI. When the assembler is used
 directly from Kotlin, relative paths are resolved from the assembler's
 configured `baseDirectory`.
 
-There is no `.word` directive yet because the current stored word size is one
-8-bit cell.
+`.num64` accepts numeric expressions, not file paths. For a text file containing
+decimal digits such as `655361234`, embed the file with `.incbin` and parse the
+ASCII digits in the program into a `.num64` destination.
 
 ## Architecture
 
@@ -111,8 +113,8 @@ KASM currently uses 8-bit data with 16-bit addresses:
 - Data memory has 65536 8-bit cells.
 - Registers and data-memory cells expose their stored unsigned byte values.
   `PRINT` therefore prints values in `0..255`.
-- `ADD`, `SUB`, `INC`, and `DEC` write wrapped 8-bit results. For example,
-  incrementing `255` stores `0`.
+- `ADD`, `ADC`, `SUB`, `SBC`, `INC`, and `DEC` write wrapped 8-bit results.
+  For example, incrementing `255` stores `0`.
 - Jump targets, direct memory addresses, indexed-memory bases, and `MOVA`
   address immediates are encoded as two little-endian operand bytes.
 - Indexed memory forms add a 16-bit static base and one 8-bit byte-register
@@ -133,8 +135,10 @@ operation. In that interpretation the same stored byte range represents
 | `MOVA`      | `address-register, address-value` | Copy a 16-bit address into an address register.    |
 | `MOVA`      | `address-register, address-register` | Copy one address register into another.          |
 | `ADD`       | `register, register`       | Add into the target register with an 8-bit wrapped result. |
+| `ADC`       | `register, register`       | Add source plus the current Carry flag into the target register. |
 | `ADDI`      | `register, byte-value`     | Add an immediate byte value into the target register.    |
 | `SUB`       | `register, register`       | Subtract into the target register with an 8-bit wrapped result. |
+| `SBC`       | `register, register`       | Subtract source plus the current Carry flag from the target register. |
 | `SUBI`      | `register, byte-value`     | Subtract an immediate byte value from the target register. |
 | `INC`       | `register`                 | Increment one register with an 8-bit wrapped result.     |
 | `DEC`       | `register`                 | Decrement one register with an 8-bit wrapped result.     |
@@ -161,7 +165,18 @@ operation. In that interpretation the same stored byte range represents
 | `INCA`      | `address-register`         | Increment one address register with 16-bit wrapping.     |
 | `DECA`      | `address-register`         | Decrement one address register with 16-bit wrapping.     |
 | `PUSH`      | `register`                 | Push a register value on the stack.                      |
+| `PUSHI`     | `byte-value`               | Push an immediate byte value on the stack.               |
+| `PUSHA`     | `address-value`            | Push a 16-bit address value as two stack bytes.          |
+| `PUSHA`     | `address-register`         | Push a 16-bit address register value as two stack bytes. |
 | `POP`       | `register`                 | Pop the stack top into a register.                       |
+| `DROP`      | `byte-value`               | Pop and discard a fixed number of stack bytes.           |
+| `DROP`      | `register`                 | Pop and discard the register value's number of stack bytes. |
+| `PEEK`      | `register, byte-value`     | Copy a stack byte at an offset from `SP` into a register. |
+| `PEEK`      | `register, register`       | Copy a stack byte at a register offset from `SP`.        |
+| `PEEKA`     | `address-register, byte-value` | Copy two stack bytes at an offset from `SP` into an address register. |
+| `PEEKA`     | `address-register, register` | Copy two stack bytes at a register offset from `SP`.   |
+| `PUSHF`     | none                       | Push Zero, Sign, Carry, and Overflow as one flag byte.   |
+| `POPF`      | none                       | Pop one flag byte and restore Zero, Sign, Carry, and Overflow. |
 | `CALL`      | `jump-target`              | Push the return address and jump to a function.          |
 | `RET`       | none                       | Pop a return address and jump back to it.                |
 | `CLR`       | `register`                 | Clear one register to zero.                              |
@@ -182,18 +197,23 @@ The VM exposes four result flags:
 | Overflow | The signed 8-bit result overflowed `-128..127`. |
 
 `CMP left, right` computes the flags from `left - right` without changing either
-register. `ADD`, `ADDI`, `SUB`, `SUBI`, `INC`, and `DEC` update the same
-addition/subtraction flags. `MUL` stores the wrapped unsigned-byte product,
-sets Carry when the unsigned product exceeds `255`, and sets Overflow when the
-signed product does not fit in `-128..127`.
+register. `ADD`, `ADC`, `ADDI`, `SUB`, `SBC`, `SUBI`, `INC`, and `DEC` update
+the same addition/subtraction flags. `ADC` treats Carry as an incoming carry bit;
+`SBC` treats Carry as an incoming borrow bit. This is the intended way to chain
+8-bit registers and memory bytes into 16-bit, 32-bit, 64-bit, or larger integer
+operations. `MUL` stores the wrapped unsigned-byte product, sets Carry when the
+unsigned product exceeds `255`, and sets Overflow when the signed product does
+not fit in `-128..127`.
 
 `DIV` and `MOD` use the stored unsigned byte values and reject a zero divisor
 with a VM error. Successful `DIV`, `MOD`, `AND`, `OR`, `XOR`, `NOT`, and `CLR`
 update Zero and Sign, and clear Carry and Overflow. `NEG` sets Carry when the
 input was non-zero and sets Overflow when negating stored value `128`.
 
-`MOVA`, `INCA`, `DECA`, `LOAD`, `STORE`, `PUSH`, `POP`, jumps, calls, output
-instructions, `NOP`, and `HALT` do not update result flags.
+`PUSHF` stores flags in one byte: bit `0` is Zero, bit `1` is Sign, bit `2` is
+Carry, and bit `3` is Overflow. `POPF` restores those four flags from the same
+layout. `MOVA`, `INCA`, `DECA`, `LOAD`, `STORE`, stack instructions, jumps,
+calls, output instructions, `NOP`, and `HALT` do not update result flags.
 
 `JE` and `JNE` test the Zero flag. `JG`, `JGE`, `JL`, and `JLE` are signed
 comparisons based on Zero, Sign, and Overflow. `JZ` and `JNZ` are separate
@@ -249,8 +269,30 @@ instruction yet.
 
 `CALL` pushes the 16-bit return bytecode address as two bytes before it jumps;
 the low byte is at the stack top. `RET` pops those two bytes and jumps back to
-that address. User `PUSH` and `POP` instructions therefore share stack space
-with nested calls.
+that address. User stack instructions therefore share stack space with nested
+calls.
+
+Parameters are explicit stack values. Push parameters before `CALL`, read them
+relative to the stack pointer in the callee, and let the caller clean them up
+after `RET`:
+
+```kasm
+  PUSHA right
+  PUSHA left
+  CALL add64
+  DROP 4
+
+add64:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  RET
+```
+
+Because the stack grows downward, the last value pushed is closest to the return
+address. In a callee, offsets `0..1` hold the return address. The first 16-bit
+address argument in the example above is at offsets `2..3`, and the second is at
+offsets `4..5`. `PUSHA` pushes a 16-bit address as high byte first, then low
+byte, so `PEEKA` reads the same little-endian layout.
 
 The VM rejects stack underflow and stack overflow. Programs that lay out fixed
 high-memory data must avoid colliding with the active stack.
@@ -268,6 +310,7 @@ this convention:
   save/restore instructions.
 - A function balances its own saved stack values before `RET`, so the return
   address pushed by `CALL` is the value consumed by `RET`.
-
-Additional arguments can be assigned by a routine-specific contract until KASM
-gains a wider calling convention.
+- The caller owns argument cleanup. For example, two `PUSHA` arguments use four
+  stack bytes, so the caller runs `DROP 4` after `RET`.
+- Variable-arity routines can push a count byte with `PUSHI`, then any number of
+  address or byte parameters, and inspect them with `PEEK`/`PEEKA`.
