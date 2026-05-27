@@ -106,6 +106,16 @@ including file. Included instructions become ordinary bytecode, so library
 includes are normally placed after the program's `HALT` or behind an explicit
 jump. Recursive include cycles are assembly errors.
 
+Assembler debug info preserves the concrete source file for each instruction.
+`SourceLocation` contains the line number, original source line, and an optional
+`sourcePath`. File assembly and included files set `sourcePath`; direct
+string-based assembly without a real file keeps it `null`. `SourceMap` can map
+bytecode addresses back to file and line, and `addressForLocation(path, line)`
+maps an executable instruction in a specific source file to its bytecode
+address. The older `addressForLine(line)` and `executableLines()` APIs remain
+available and refer to executable lines in the primary source file, or to the
+top-level string source when no primary file path exists.
+
 `.num64` accepts numeric expressions, not file paths. To use decimal digits
 from a text file, embed the file with `.incbin` and parse the ASCII digits in
 the program into a `.num64` destination. The examples

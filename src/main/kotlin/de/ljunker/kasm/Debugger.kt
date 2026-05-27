@@ -1,10 +1,13 @@
 package de.ljunker.kasm
 
+import java.nio.file.Path
+
 class Debugger(
     private val debugProgram: DebugProgram,
     private val sourceName: String,
     private val readCommand: () -> String?,
-    private val output: (String) -> Unit = ::println
+    private val output: (String) -> Unit = ::println,
+    private val sourcePath: Path? = debugProgram.sourceMap.primarySourcePath
 ) {
     private val session = DebugSession(
         debugProgram = debugProgram,
@@ -94,7 +97,7 @@ class Debugger(
     private fun continueUntilBreakpoint() {
         when (val stop = session.run()) {
             is DebugStop.BreakpointHit ->
-                printState("Breakpoint hit at line ${stop.breakpoint.lineNumber}.")
+                printState("Breakpoint hit at ${formatBreakpointLocation(stop.breakpoint)}.")
 
             is DebugStop.Halted ->
                 printState("Program halted.")
@@ -142,7 +145,7 @@ class Debugger(
                 output("Next: <halted>")
 
             location != null ->
-                output("Next: line ${location.lineNumber}: ${location.source.trim()}")
+                output("Next: ${formatLocation(location)}")
 
             else ->
                 output("Next: no source location for address ${snapshot.instructionPointer}")
@@ -200,7 +203,7 @@ class Debugger(
 
         val breakpoints = lineBreakpoints
             .joinToString(separator = " ") { breakpoint ->
-                "line ${breakpoint.lineNumber} @ ${breakpoint.address}"
+                "${formatBreakpointLocation(breakpoint)} @ ${breakpoint.address}"
             }
 
         output("Breakpoints: $breakpoints")
@@ -223,4 +226,24 @@ class Debugger(
 
     private fun formatAddressValue(address: Int): String =
         "0x%04X".format(address)
+
+    private fun formatLocation(location: SourceLocation): String =
+        "${formatSourcePrefix(location.sourcePath)}line ${location.lineNumber}: ${location.source.trim()}"
+
+    private fun formatBreakpointLocation(breakpoint: LineBreakpoint): String =
+        "${formatSourcePrefix(breakpoint.sourcePath)}line ${breakpoint.lineNumber}"
+
+    private fun formatSourcePrefix(locationSourcePath: Path?): String {
+        if (
+            locationSourcePath == null ||
+            locationSourcePath.normalizeForLookup() == sourcePath?.normalizeForLookup()
+        ) {
+            return ""
+        }
+
+        return "${locationSourcePath.fileName ?: locationSourcePath}: "
+    }
+
+    private fun Path.normalizeForLookup(): Path =
+        toAbsolutePath().normalize()
 }

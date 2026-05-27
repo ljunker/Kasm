@@ -156,12 +156,17 @@ Die CLI kann Quellprogramme direkt ausfuehren und interaktiv debuggen:
 - `step` fuehrt die naechste Quellinstruktion aus.
 - `state` zeigt IP, Flags, Register, Stack und nichtleere Memory-Zellen.
 
-Der Assembler erzeugt dafuer bereits eine Source-Map zwischen Quellzeilen und
-Bytecode-Adressen. Breakpoints auf reinen Label-, Leer- oder Kommentarzeilen
-werden aktuell abgelehnt. `DebugSession` kapselt Run/Step, Source-Breakpoints,
-typed Stop-Gruende und Snapshots headless; die CLI-REPL ist nur ein Adapter
-darueber. Damit kann ein IntelliJ-Plugin die Debugger-Steuerung benutzen, ohne
-Terminalausgabe parsen zu muessen.
+Der Assembler erzeugt dafuer eine Source-Map zwischen Bytecode-Adressen und
+Quellpositionen. `SourceLocation` enthaelt Zeile, Quelltext und optional den
+konkreten Quelldateipfad; Datei-Assembly und Includes setzen diesen Pfad,
+String-Assembly ohne echte Datei bleibt pfadlos. `SourceMap` kann Adressen
+ueber Datei+Zeile aufloesen, waehrend die alten line-basierten APIs auf die
+Hauptdatei beziehungsweise den Top-Level-String zeigen. Breakpoints auf reinen
+Label-, Leer- oder Kommentarzeilen werden aktuell abgelehnt. `DebugSession`
+kapselt Run/Step, line- und dateibewusste Source-Breakpoints, typed
+Stop-Gruende und Snapshots headless; die CLI-REPL ist nur ein Adapter darueber.
+Damit kann ein IntelliJ-Plugin die Debugger-Steuerung benutzen, ohne
+Terminalausgabe oder Include-Pfade rekonstruieren zu muessen.
 
 Der Entwicklungsstart ueber `./gradlew run` ist fuer Tests und Repo-Arbeit
 praktisch, soll aber nicht der normale Nutzerweg bleiben. `installDist` erzeugt
@@ -308,6 +313,8 @@ aufgeteilt:
 - `.incbin` in inkludierten Dateien wird ebenfalls relativ zur inkludierten
   Datei aufgeloest.
 - Rekursive Include-Zyklen werden als Assembler-Fehler abgelehnt.
+- Debug-Informationen behalten fuer Instruktionen aus Includes den konkreten
+  Quelldateipfad und die Zeile der Include-Datei.
 - `lib/u64-core.kasm` enthaelt Copy/Clear/Zero/Add/Sub/Byte-Ausgabe.
 - `lib/u64-arithmetic.kasm` enthaelt einfache 64-bit-Mul/Div/Mod-Helfer und
   erwartet `lib/u64-core.kasm`.
@@ -357,7 +364,6 @@ das Bytecode- und Debugger-Tooling folgen.
   - IntelliJ-Adapter fuer `DebugSession` mit Run/Step-Aktionen und Tool Window
 - Source Maps weiter nutzen:
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
-  - file-aware Source Maps fuer Breakpoints in inkludierten Library-Dateien
   - spaeter optional im Bytecode-Format persistieren
 
 ### 2. Parser und Diagnostik verbessern

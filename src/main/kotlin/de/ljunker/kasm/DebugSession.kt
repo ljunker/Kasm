@@ -1,5 +1,7 @@
 package de.ljunker.kasm
 
+import java.nio.file.Path
+
 class DebugSession(
     private val debugProgram: DebugProgram,
     output: (String) -> Unit = {}
@@ -16,14 +18,15 @@ class DebugSession(
     fun setBreakpoint(lineNumber: Int): LineBreakpoint? {
         val address = debugProgram.sourceMap.addressForLine(lineNumber)
             ?: return null
-        val breakpoint = LineBreakpoint(
-            lineNumber = lineNumber,
-            address = address
-        )
 
-        breakpointsByAddress[address] = breakpoint
+        return setBreakpointAtAddress(address, lineNumber)
+    }
 
-        return breakpoint
+    fun setBreakpoint(sourcePath: Path, lineNumber: Int): LineBreakpoint? {
+        val address = debugProgram.sourceMap.addressForLocation(sourcePath, lineNumber)
+            ?: return null
+
+        return setBreakpointAtAddress(address, lineNumber)
     }
 
     fun removeBreakpoint(lineNumber: Int): Boolean {
@@ -33,8 +36,18 @@ class DebugSession(
         return breakpointsByAddress.remove(address) != null
     }
 
+    fun removeBreakpoint(sourcePath: Path, lineNumber: Int): Boolean {
+        val address = debugProgram.sourceMap.addressForLocation(sourcePath, lineNumber)
+            ?: return false
+
+        return breakpointsByAddress.remove(address) != null
+    }
+
     fun breakpoints(): List<LineBreakpoint> =
-        breakpointsByAddress.values.sortedBy(LineBreakpoint::lineNumber)
+        breakpointsByAddress.values.sortedWith(
+            compareBy<LineBreakpoint> { it.sourcePath?.toString().orEmpty() }
+                .thenBy(LineBreakpoint::lineNumber)
+        )
 
     fun snapshot(): DebugSnapshot =
         DebugSnapshot(
@@ -107,11 +120,24 @@ class DebugSession(
                 snapshot = snapshot()
             )
         }
+
+    private fun setBreakpointAtAddress(address: Int, lineNumber: Int): LineBreakpoint {
+        val breakpoint = LineBreakpoint(
+            lineNumber = lineNumber,
+            address = address,
+            sourcePath = debugProgram.sourceMap.locationForAddress(address)?.sourcePath
+        )
+
+        breakpointsByAddress[address] = breakpoint
+
+        return breakpoint
+    }
 }
 
 data class LineBreakpoint(
     val lineNumber: Int,
-    val address: Int
+    val address: Int,
+    val sourcePath: Path? = null
 )
 
 data class DebugSnapshot(

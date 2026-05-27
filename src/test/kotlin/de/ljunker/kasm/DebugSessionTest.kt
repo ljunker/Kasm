@@ -1,5 +1,8 @@
 package de.ljunker.kasm
 
+import kotlin.io.path.createDirectories
+import kotlin.io.path.createTempDirectory
+import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -65,5 +68,52 @@ class DebugSessionTest {
         val error = assertIs<DebugStop.VmError>(session.step())
 
         assertEquals("Stack underflow", error.error.message)
+    }
+
+    @Test
+    fun setsFileAwareBreakpointsInIncludedSources() {
+        val baseDirectory = createTempDirectory("kasm-debug-session-include")
+        baseDirectory.resolve("lib").createDirectories()
+        val includePath = baseDirectory.resolve("lib/printer.kasm")
+        val mainPath = baseDirectory.resolve("main.kasm")
+        includePath.writeText(
+            """
+            included_print:
+              PRINT R0
+              RET
+            """.trimIndent()
+        )
+        mainPath.writeText(
+            """
+            MOV R0, 5
+            CALL included_print
+            HALT
+
+            .include "lib/printer.kasm"
+            """.trimIndent()
+        )
+        val output = mutableListOf<String>()
+        val session = DebugSession(
+            debugProgram = Assembler().assembleFileWithDebugInfo(mainPath),
+            output = { line -> output += line }
+        )
+        val normalizedIncludePath = includePath.toAbsolutePath().normalize()
+
+        assertEquals(
+            LineBreakpoint(
+                lineNumber = 2,
+                address = 7,
+                sourcePath = normalizedIncludePath
+            ),
+            session.setBreakpoint(includePath, 2)
+        )
+
+        val firstHit = assertIs<DebugStop.BreakpointHit>(session.run())
+
+        assertEquals(normalizedIncludePath, firstHit.breakpoint.sourcePath)
+        assertEquals(2, firstHit.snapshot.nextLocation?.lineNumber)
+        assertEquals(normalizedIncludePath, firstHit.snapshot.nextLocation?.sourcePath)
+        assertEquals(emptyList(), output)
+        assertEquals(true, session.removeBreakpoint(includePath, 2))
     }
 }

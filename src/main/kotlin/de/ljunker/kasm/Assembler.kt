@@ -13,8 +13,22 @@ class Assembler(
     fun assemble(source: String): Program =
         assembleWithDebugInfo(source).program
 
-    fun assembleWithDebugInfo(source: String): DebugProgram {
-        val statements = parseStatements(source)
+    fun assemble(source: String, sourcePath: Path?): Program =
+        assembleWithDebugInfo(source, sourcePath).program
+
+    fun assembleFile(sourcePath: Path): Program =
+        assembleFileWithDebugInfo(sourcePath).program
+
+    fun assembleWithDebugInfo(source: String): DebugProgram =
+        assembleWithDebugInfo(source, sourcePath = null)
+
+    fun assembleWithDebugInfo(source: String, sourcePath: Path?): DebugProgram {
+        val context = sourceContextFor(sourcePath)
+        val statements = parseStatements(
+            source = source,
+            context = context,
+            includeStack = context.sourcePath?.let(::setOf).orEmpty()
+        )
         val symbols = collectSymbols(statements)
         val encoding = encode(statements, symbols)
 
@@ -23,16 +37,21 @@ class Assembler(
                 bytes = encoding.bytes,
                 initialMemory = encoding.initialMemory
             ),
-            sourceMap = SourceMap(encoding.sourceLocations)
+            sourceMap = SourceMap(
+                locationsByAddress = encoding.sourceLocations,
+                primarySourcePath = context.sourcePath
+            )
         )
     }
 
-    private fun parseStatements(source: String): List<Statement> =
-        parseStatements(
-            source = source,
-            context = SourceContext(directory = baseDirectory.normalize()),
-            includeStack = emptySet()
+    fun assembleFileWithDebugInfo(sourcePath: Path): DebugProgram {
+        val normalizedSourcePath = normalizeSourcePath(sourcePath)
+
+        return assembleWithDebugInfo(
+            source = normalizedSourcePath.readText(),
+            sourcePath = normalizedSourcePath
         )
+    }
 
     private fun parseStatements(
         source: String,
@@ -61,7 +80,8 @@ class Assembler(
                     statements += Statement.Label(
                         name = labelName,
                         lineNumber = lineNumber,
-                        sourceDirectory = context.directory
+                        sourceDirectory = context.directory,
+                        sourcePath = context.sourcePath
                     )
 
                     line = rest
@@ -91,7 +111,8 @@ class Assembler(
                         name = name,
                         arguments = arguments,
                         lineNumber = lineNumber,
-                        sourceDirectory = context.directory
+                        sourceDirectory = context.directory,
+                        sourcePath = context.sourcePath
                     )
                 } else {
                     Statement.Instruction(
@@ -99,7 +120,8 @@ class Assembler(
                         arguments = arguments,
                         lineNumber = lineNumber,
                         original = rawLine,
-                        sourceDirectory = context.directory
+                        sourceDirectory = context.directory,
+                        sourcePath = context.sourcePath
                     )
                 }
 
@@ -122,25 +144,28 @@ class Assembler(
             )
         }
 
-        val sourcePath = parseStringLiteral(arguments[0], lineNumber)
-        val path = resolvePath(sourcePath, context.directory)
+        val includeSourcePath = parseStringLiteral(arguments[0], lineNumber)
+        val path = resolvePath(includeSourcePath, context.directory)
         val stackPath = path.toAbsolutePath().normalize()
 
         if (stackPath in includeStack) {
-            throw AssemblyException("Line $lineNumber: recursive include '$sourcePath'")
+            throw AssemblyException("Line $lineNumber: recursive include '$includeSourcePath'")
         }
 
         val includedSource = try {
             path.readText()
         } catch (error: IOException) {
             throw AssemblyException(
-                "Line $lineNumber: could not read include file '$sourcePath': ${error.message}"
+                "Line $lineNumber: could not read include file '$includeSourcePath': ${error.message}"
             )
         }
 
         return parseStatements(
             source = includedSource,
-            context = SourceContext(directory = path.parent ?: context.directory),
+            context = SourceContext(
+                directory = path.parent ?: context.directory,
+                sourcePath = path
+            ),
             includeStack = includeStack + stackPath
         )
     }
@@ -378,7 +403,8 @@ class Assembler(
 
                     sourceLocations[bytes.size] = SourceLocation(
                         lineNumber = statement.lineNumber,
-                        source = statement.original
+                        source = statement.original,
+                        sourcePath = statement.sourcePath
                     )
                     bytes += opcode.code
 
@@ -1228,8 +1254,27 @@ class Assembler(
         return if (path.isAbsolute) {
             path.normalize()
         } else {
-            sourceDirectory.resolve(path).normalize()
+            sourceDirectory.resolve(path).toAbsolutePath().normalize()
         }
+    }
+
+    private fun sourceContextFor(sourcePath: Path?): SourceContext {
+        val normalizedSourcePath = sourcePath?.let(::normalizeSourcePath)
+
+        return SourceContext(
+            directory = normalizedSourcePath?.parent ?: baseDirectory.toAbsolutePath().normalize(),
+            sourcePath = normalizedSourcePath
+        )
+    }
+
+    private fun normalizeSourcePath(sourcePath: Path): Path {
+        val path = if (sourcePath.isAbsolute) {
+            sourcePath
+        } else {
+            baseDirectory.resolve(sourcePath)
+        }
+
+        return path.toAbsolutePath().normalize()
     }
 
     private inner class Symbols(
@@ -1393,11 +1438,13 @@ class Assembler(
     private sealed interface Statement {
         val lineNumber: Int
         val sourceDirectory: Path
+        val sourcePath: Path?
 
         data class Label(
             val name: String,
             override val lineNumber: Int,
-            override val sourceDirectory: Path
+            override val sourceDirectory: Path,
+            override val sourcePath: Path?
         ) : Statement
 
         data class Instruction(
@@ -1405,19 +1452,22 @@ class Assembler(
             val arguments: List<String>,
             override val lineNumber: Int,
             val original: String,
-            override val sourceDirectory: Path
+            override val sourceDirectory: Path,
+            override val sourcePath: Path?
         ) : Statement
 
         data class Directive(
             val name: String,
             val arguments: List<String>,
             override val lineNumber: Int,
-            override val sourceDirectory: Path
+            override val sourceDirectory: Path,
+            override val sourcePath: Path?
         ) : Statement
     }
 
     private data class SourceContext(
-        val directory: Path
+        val directory: Path,
+        val sourcePath: Path?
     )
 
     private enum class DirectiveKind {

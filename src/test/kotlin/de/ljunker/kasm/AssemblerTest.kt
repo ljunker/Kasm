@@ -221,6 +221,42 @@ class AssemblerTest {
         assertEquals(null, debugProgram.sourceMap.addressForLine(2))
         assertEquals(3, debugProgram.sourceMap.addressForLine(3))
         assertEquals("PRINT R0", debugProgram.sourceMap.locationForAddress(3)?.source?.trim())
+        assertEquals(null, debugProgram.sourceMap.locationForAddress(3)?.sourcePath)
+    }
+
+    @Test
+    fun mapsExecutableLocationsToIncludedSourceFiles() {
+        val baseDirectory = createTempDirectory("kasm-debug-include")
+        baseDirectory.resolve("lib").createDirectories()
+        val includePath = baseDirectory.resolve("lib/foo.kasm")
+        val mainPath = baseDirectory.resolve("main.kasm")
+        includePath.writeText(
+            """
+            included_add:
+              ADD R0, R1
+              RET
+            """.trimIndent()
+        )
+        mainPath.writeText(
+            """
+            MOV R0, 1
+            .include "lib/foo.kasm"
+            HALT
+            """.trimIndent()
+        )
+
+        val debugProgram = Assembler().assembleFileWithDebugInfo(mainPath)
+        val normalizedMainPath = mainPath.toAbsolutePath().normalize()
+        val normalizedIncludePath = includePath.toAbsolutePath().normalize()
+        val includeLocation = debugProgram.sourceMap.locationForAddress(3)
+
+        assertEquals(normalizedMainPath, debugProgram.sourceMap.primarySourcePath)
+        assertEquals(normalizedIncludePath, includeLocation?.sourcePath)
+        assertEquals(2, includeLocation?.lineNumber)
+        assertEquals("ADD R0, R1", includeLocation?.source?.trim())
+        assertEquals(3, debugProgram.sourceMap.addressForLocation(includePath, 2))
+        assertEquals(null, debugProgram.sourceMap.addressForLine(2))
+        assertEquals(7, debugProgram.sourceMap.addressForLine(3))
     }
 
     @Test
@@ -443,6 +479,56 @@ class AssemblerTest {
             ).bytes,
             program.bytes
         )
+    }
+
+    @Test
+    fun mapsNestedIncludesRelativeToEachIncludedFile() {
+        val baseDirectory = createTempDirectory("kasm-nested-debug-include")
+        baseDirectory.resolve("lib/math/nested").createDirectories()
+        val mainPath = baseDirectory.resolve("main.kasm")
+        val includePath = baseDirectory.resolve("lib/math/foo.kasm")
+        val nestedPath = baseDirectory.resolve("lib/math/nested/bar.kasm")
+        includePath.writeText(
+            """
+            .include "nested/bar.kasm"
+            RET
+            """.trimIndent()
+        )
+        nestedPath.writeText(
+            """
+            nested_add:
+              ADD R0, R1
+            """.trimIndent()
+        )
+        mainPath.writeText(
+            """
+            MOV R0, 1
+            .include "lib/math/foo.kasm"
+            HALT
+            """.trimIndent()
+        )
+
+        val sourceMap = Assembler().assembleFileWithDebugInfo(mainPath).sourceMap
+
+        assertEquals(3, sourceMap.addressForLocation(nestedPath, 2))
+        assertEquals(6, sourceMap.addressForLocation(includePath, 2))
+        assertEquals(nestedPath.toAbsolutePath().normalize(), sourceMap.locationForAddress(3)?.sourcePath)
+        assertEquals(includePath.toAbsolutePath().normalize(), sourceMap.locationForAddress(6)?.sourcePath)
+    }
+
+    @Test
+    fun rejectsRecursiveIncludesWhenAssemblingAFile() {
+        val baseDirectory = createTempDirectory("kasm-recursive-include")
+        val firstPath = baseDirectory.resolve("a.kasm")
+        val secondPath = baseDirectory.resolve("b.kasm")
+        firstPath.writeText(".include \"b.kasm\"")
+        secondPath.writeText(".include \"a.kasm\"")
+
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assembleFileWithDebugInfo(firstPath)
+        }
+
+        assertEquals("Line 1: recursive include 'a.kasm'", exception.message)
     }
 
     @Test
