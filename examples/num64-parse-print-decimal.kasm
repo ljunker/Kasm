@@ -1,0 +1,24 @@
+; Read decimal ASCII from a file into .num64 storage, then print it as decimal
+; text again.
+  .org 0x1A00
+digits:
+  .incbin "data/num64-decimal.txt"
+digits_end:
+  .byte 0
+parsed:
+  .num64 0
+
+  PUSHA parsed
+  PUSHA digits
+  CALL u64_parse_decimal
+  DROP 4
+
+  PUSHA parsed
+  CALL u64_print_decimal
+  DROP 2
+  MOV R0, 10
+  PRINTC R0
+  HALT
+
+  .include "../lib/u64-core.kasm"
+  .include "../lib/u64-decimal.kasm"

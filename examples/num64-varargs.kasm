@@ -16,7 +16,7 @@ total:
   .num64 0
 
   PUSHA total
-  CALL clear64
+  CALL u64_clear
   DROP 2
 
   PUSHA n3
@@ -27,7 +27,7 @@ total:
   DROP 7
 
   PUSHA total
-  CALL print64
+  CALL u64_print_bytes
   DROP 2
   HALT
 
@@ -39,7 +39,7 @@ sum_many64_loop:
   PEEKA A1, R2
   PUSHA A1
   PUSHA total
-  CALL add64
+  CALL u64_add
   DROP 4
   ADDI R2, 2
   DEC R3
@@ -47,63 +47,4 @@ sum_many64_loop:
 sum_many64_done:
   RET
 
-clear64:
-  PEEKA A0, 2
-  PUSH R2
-  MOV R2, 8
-  CLR R0
-clear64_loop:
-  STORE [A0], R0
-  INCA A0
-  DEC R2
-  JNZ R2, clear64_loop
-  POP R2
-  RET
-
-add64:
-  PEEKA A0, 2
-  PEEKA A1, 4
-  PUSH R2
-  PUSH R3
-  MOV R2, 8
-  CLR R3
-add64_loop:
-  LOAD R0, [A0]
-  LOAD R1, [A1]
-  JZ R3, add64_low_byte
-  ADC R0, R1
-  JMP add64_store
-add64_low_byte:
-  ADD R0, R1
-  MOV R3, 1
-add64_store:
-  STORE [A0], R0
-  INCA A0
-  INCA A1
-  PUSHF
-  DEC R2
-  POPF
-  JNZ R2, add64_loop
-  POP R3
-  POP R2
-  RET
-
-print64:
-  PEEKA A0, 2
-  PUSH R2
-  MOV R2, 7
-print64_seek_end:
-  INCA A0
-  DEC R2
-  JNZ R2, print64_seek_end
-  MOV R2, 8
-print64_loop:
-  LOAD R0, [A0]
-  PRINT R0
-  DEC R2
-  JZ R2, print64_done
-  DECA A0
-  JNZ R2, print64_loop
-print64_done:
-  POP R2
-  RET
+  .include "../lib/u64-core.kasm"

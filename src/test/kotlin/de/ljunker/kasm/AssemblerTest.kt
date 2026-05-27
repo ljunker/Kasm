@@ -1,7 +1,9 @@
 package de.ljunker.kasm
 
 import kotlin.io.path.createTempDirectory
+import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
+import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -401,6 +403,81 @@ class AssemblerTest {
                 0x1235 to 65,
                 0x1236 to 255,
                 0x1237 to 0
+            ),
+            program.initialMemory
+        )
+    }
+
+    @Test
+    fun includesSourcesRelativeToTheCurrentSourceDirectory() {
+        val baseDirectory = createTempDirectory("kasm-include")
+        baseDirectory.resolve("lib").createDirectories()
+        baseDirectory.resolve("lib/u64.kasm").writeText(
+            """
+            .equ INCLUDED_VALUE, 7
+            included_add:
+              ADD R0, R1
+              RET
+            """.trimIndent()
+        )
+
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            MOV R0, INCLUDED_VALUE
+            MOV R1, 5
+            CALL included_add
+            HALT
+
+            .include "lib/u64.kasm"
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.MOV.code, 0, 7,
+                Opcode.MOV.code, 1, 5,
+                Opcode.CALL.code, 10, 0,
+                Opcode.HALT.code,
+                Opcode.ADD.code, 0, 1,
+                Opcode.RET.code
+            ).bytes,
+            program.bytes
+        )
+    }
+
+    @Test
+    fun resolvesIncbinRelativeToIncludedFiles() {
+        val baseDirectory = createTempDirectory("kasm-include-incbin")
+        baseDirectory.resolve("lib").createDirectories()
+        baseDirectory.resolve("lib/blob.bin").writeBytes(byteArrayOf(1, 2, 3))
+        baseDirectory.resolve("lib/data.kasm").writeText(
+            """
+            .org 0x2200
+            blob:
+              .incbin "blob.bin"
+            """.trimIndent()
+        )
+
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .include "lib/data.kasm"
+            LOAD R0, [blob + 1]
+            HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program.of(
+                Opcode.LOAD.code, 0, 0x01, 0x22,
+                Opcode.HALT.code
+            ).bytes,
+            program.bytes
+        )
+        assertEquals(
+            mapOf(
+                0x2200 to 1,
+                0x2201 to 2,
+                0x2202 to 3
             ),
             program.initialMemory
         )

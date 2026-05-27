@@ -13,7 +13,8 @@ Die Sprache kennt aktuell:
 - Labels und `;`-Kommentare.
 - Dezimale, hexadezimale und binaere Zahlenliterale.
 - Konstanten, Datenlayout und kleine Ausdruecke:
-  - `.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, `.incbin`
+  - `.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, `.incbin`,
+    `.include`
   - `end - start`
   - `[buffer + 1]`
 - Vier allgemeine Register: `R0` bis `R3`.
@@ -127,14 +128,20 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
 - `examples/wide-add64.kasm`, `examples/wide-sub64.kasm`,
   `examples/wide-incdec64.kasm` und `examples/wide-mul8x64.kasm` zeigen
   64-bit-Arithmetik mit 8-bit-Registern, `ADC` und `SBC`.
-- `examples/num64-arithmetic.kasm` zeigt `.num64`, explizite Stack-Parameter
-  und 64-bit-Add/Sub/Mul/Div/Mod-Routinen.
+- `examples/num64-arithmetic.kasm` zeigt `.num64`, explizite Stack-Parameter,
+  `.include` und die U64-Add/Sub/Mul/Div/Mod-Library.
 - `examples/num64-parse-decimal-file.kasm` liest ASCII-Ziffern mit `.incbin`
-  und parst sie zur Laufzeit in einen `.num64`-Speicherbereich.
+  und der U64-Decimal-Library in einen `.num64`-Speicherbereich.
+- `examples/num64-print-decimal.kasm` konvertiert eine binaere `.num64`
+  per Library-Routine in Dezimal-ASCII und gibt sie mit `PRINTC` aus.
+- `examples/num64-parse-print-decimal.kasm` zeigt den Roundtrip von
+  `.incbin`-Text zu `.num64` und zurueck zu Dezimal-ASCII.
 - `examples/num64-varargs.kasm` zeigt variable viele Stack-Parameter mit
   `PUSHI`, `PUSHA`, `PEEK` und `PEEKA`.
 - `examples/aoc-2025-day1-sample.kasm` zeigt einen kleinen ASCII-Parser mit
   `CALL`/`RET` fuer Advent of Code 2025 Day 1.
+- `examples/aoc-2025-day1-part2.kasm` loest Advent of Code 2025 Day 1 Part 2
+  mit `.include`, `.num64`, Division durch 100 und Dezimal-Ausgabe.
 - `examples/stack-calls.kasm` zeigt verschachtelte `CALL`/`RET` und gesicherte Register.
 
 ### CLI und Debugger
@@ -290,6 +297,25 @@ bequem. Die reproduzierbare Assembler-Variante ist umgesetzt:
 - `examples/incbin-print.kasm` zeigt Datei-Daten plus Pointer-Iteration mit
   `A0` und `PRINTC`.
 
+### Abgeschlossen: `.include` und U64-Libraries
+
+Die langen `.num64`-Beispiele sind jetzt auf wiederverwendbare KASM-Libraries
+aufgeteilt:
+
+- `.include "path"` expandiert eine andere KASM-Datei an Ort und Stelle.
+- Relative Include-Pfade werden relativ zu der Datei aufgeloest, die die
+  Direktive enthaelt; verschachtelte Includes funktionieren entsprechend.
+- `.incbin` in inkludierten Dateien wird ebenfalls relativ zur inkludierten
+  Datei aufgeloest.
+- Rekursive Include-Zyklen werden als Assembler-Fehler abgelehnt.
+- `lib/u64-core.kasm` enthaelt Copy/Clear/Zero/Add/Sub/Byte-Ausgabe.
+- `lib/u64-arithmetic.kasm` enthaelt einfache 64-bit-Mul/Div/Mod-Helfer und
+  erwartet `lib/u64-core.kasm`.
+- `lib/u64-decimal.kasm` enthaelt Dezimal-Parsing und Dezimal-Ausgabe fuer
+  `.num64`-Werte und erwartet `lib/u64-core.kasm`.
+- Library-Includes stehen in den Beispielen hinter `HALT`, weil inkludierte
+  Instruktionen normaler Bytecode sind und sonst mit ausgefuehrt wuerden.
+
 ### 1. Direkten CLI-Workflow ausbauen
 
 Der interaktive Source-Debugger ist bereits vorhanden. Sobald Programme groesser
@@ -331,13 +357,14 @@ das Bytecode- und Debugger-Tooling folgen.
   - IntelliJ-Adapter fuer `DebugSession` mit Run/Step-Aktionen und Tool Window
 - Source Maps weiter nutzen:
   - bessere Laufzeitfehler fuer Spruenge, Stack und Memory
+  - file-aware Source Maps fuer Breakpoints in inkludierten Library-Dateien
   - spaeter optional im Bytecode-Format persistieren
 
 ### 2. Parser und Diagnostik verbessern
 
 Der aktuelle Parser ist fuer die kleine Syntax bewusst direkt. Die neuen
-Direktiven, Ausdruecke und Strings machen eine sauberere Parser-Grenze jetzt
-nuetzlicher; Makros wuerden ohne sie schnell unhandlich.
+Direktiven, Includes, Ausdruecke und Strings machen eine sauberere
+Parser-Grenze jetzt nuetzlicher; Makros wuerden ohne sie schnell unhandlich.
 
 - Lexer/Parser-Grenze sauberer machen.
 - Operandentypen als Datenmodell einfuehren statt spaet Strings zu zerlegen.
@@ -363,7 +390,7 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 
-- Makros und `.include`.
+- Makros.
 - Optionaler Laufzeit-Dateiloader:
   - `kasm run program.kasm --load input.txt:0x2000`
   - dieselben Loader-Optionen fuer `kasm debug`

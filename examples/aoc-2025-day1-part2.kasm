@@ -1,0 +1,160 @@
+; Advent of Code 2025 Day 1, part 2 sample.
+; Count every click that makes the dial point at 0, including intermediate
+; positions during long rotations such as R1000.
+; Output for examples/data/aoc-2025-01-sample.txt: 6
+  .equ NEWLINE, 10
+  .equ LEFT, 76
+  .equ DIAL_SIZE, 100
+
+  .org 0x2000
+input:
+  .incbin "data/aoc-2025-01-sample.txt"
+input_end:
+  .byte 0
+
+direction:
+  .byte 0
+dial:
+  .byte 50
+rotation:
+  .num64 0
+hundred:
+  .num64 100
+work:
+  .num64 0
+offset:
+  .num64 0
+quotient:
+  .num64 0
+remainder:
+  .num64 0
+zero_count:
+  .num64 0
+
+  MOVA A0, input
+
+next_rotation:
+  LOAD R0, [A0]
+  JZ R0, done
+  CALL read_rotation
+  PUSHA A0
+  CALL apply_rotation
+  PEEKA A0, 0
+  DROP 2
+  JMP next_rotation
+
+done:
+  PUSHA zero_count
+  CALL u64_print_decimal
+  DROP 2
+  MOV R0, NEWLINE
+  PRINTC R0
+  HALT
+
+read_rotation:
+  LOAD R0, [A0]
+  STORE [direction], R0
+  INCA A0
+
+  PUSHA A0
+  PUSHA rotation
+  PUSHA A0
+  CALL u64_parse_decimal
+  DROP 4
+  PEEKA A0, 0
+  DROP 2
+
+skip_digits:
+  LOAD R0, [A0]
+  JZ R0, read_rotation_done
+  MOV R1, NEWLINE
+  CMP R0, R1
+  JE skip_newline
+  INCA A0
+  JMP skip_digits
+
+skip_newline:
+  INCA A0
+
+read_rotation_done:
+  RET
+
+apply_rotation:
+  PUSHA offset
+  CALL u64_clear
+  DROP 2
+
+  LOAD R0, [direction]
+  MOV R1, LEFT
+  CMP R0, R1
+  JE prepare_left_offset
+
+prepare_right_offset:
+  LOAD R0, [dial]
+  STORE [offset], R0
+  JMP count_zero_hits
+
+prepare_left_offset:
+  LOAD R0, [dial]
+  JZ R0, count_zero_hits
+  MOV R1, DIAL_SIZE
+  SUB R1, R0
+  STORE [offset], R1
+
+count_zero_hits:
+  PUSHA work
+  PUSHA rotation
+  CALL u64_copy
+  DROP 4
+
+  PUSHA offset
+  PUSHA work
+  CALL u64_add
+  DROP 4
+
+  PUSHA remainder
+  PUSHA quotient
+  PUSHA hundred
+  PUSHA work
+  CALL u64_divmod
+  DROP 8
+
+  PUSHA quotient
+  PUSHA zero_count
+  CALL u64_add
+  DROP 4
+
+  PUSHA remainder
+  PUSHA quotient
+  PUSHA hundred
+  PUSHA rotation
+  CALL u64_divmod
+  DROP 8
+
+  LOAD R1, [remainder]
+  LOAD R0, [direction]
+  MOV R2, LEFT
+  CMP R0, R2
+  JE update_left
+
+update_right:
+  LOAD R0, [dial]
+  ADD R0, R1
+  MOV R2, DIAL_SIZE
+  MOD R0, R2
+  STORE [dial], R0
+  RET
+
+update_left:
+  LOAD R0, [dial]
+  CMP R0, R1
+  JGE update_left_no_wrap
+  ADDI R0, DIAL_SIZE
+update_left_no_wrap:
+  SUB R0, R1
+  STORE [dial], R0
+  RET
+
+  .include "../lib/u64-core.kasm"
+  .include "../lib/u64-arithmetic.kasm"
+  .include "../lib/u64-decimal.kasm"

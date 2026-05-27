@@ -72,8 +72,8 @@ buffer_end:
   MOV R1, buffer_end - buffer
 ```
 
-Data directives initialize the VM data memory before the first instruction
-executes:
+Directives define constants, include source files, or initialize VM data memory
+before the first instruction executes:
 
 | Directive         | Effect                                                      |
 |-------------------|-------------------------------------------------------------|
@@ -84,6 +84,7 @@ executes:
 | `.ascii "text"`   | Initialize one cell per ASCII byte without a terminator.    |
 | `.string "text"`  | Initialize ASCII bytes followed by one zero byte.           |
 | `.incbin "path"`  | Initialize one cell per byte read from a binary file.       |
+| `.include "path"` | Expand another KASM source file at this point.              |
 
 `.org` affects only the data-memory layout cursor. It does not add bytecode or
 change bytecode instruction addresses. Reinitializing the same data-memory
@@ -93,13 +94,34 @@ and `\\`.
 
 `.incbin` reads raw bytes at assembly time and writes them to data memory
 without adding a terminator. Relative `.incbin` paths are resolved relative to
-the source file directory when using the CLI. When the assembler is used
-directly from Kotlin, relative paths are resolved from the assembler's
-configured `baseDirectory`.
+the file containing the directive. When the assembler is used directly from
+Kotlin with a source string, top-level relative paths are resolved from the
+assembler's configured `baseDirectory`.
 
-`.num64` accepts numeric expressions, not file paths. For a text file containing
-decimal digits such as `655361234`, embed the file with `.incbin` and parse the
-ASCII digits in the program into a `.num64` destination.
+`.include` reads another KASM source file at assembly time and expands it at
+the directive position. Relative include paths are resolved relative to the file
+containing the `.include`; nested includes use their own file directory. Labels
+and constants from included files share the same global symbol namespace as the
+including file. Included instructions become ordinary bytecode, so library
+includes are normally placed after the program's `HALT` or behind an explicit
+jump. Recursive include cycles are assembly errors.
+
+`.num64` accepts numeric expressions, not file paths. To use decimal digits
+from a text file, embed the file with `.incbin` and parse the ASCII digits in
+the program into a `.num64` destination. The examples
+`examples/num64-parse-decimal-file.kasm` and
+`examples/num64-print-decimal.kasm` show decimal text input and output for
+`.num64` values.
+
+The repository's `lib/` directory provides reusable KASM routines for unsigned
+64-bit `.num64` values:
+
+- `lib/u64-core.kasm` contains copy, clear, zero-test, add, sub, and byte-dump
+  helpers.
+- `lib/u64-arithmetic.kasm` contains simple repeated-add/sub multiplication and
+  division helpers and expects `lib/u64-core.kasm` to be included too.
+- `lib/u64-decimal.kasm` contains decimal text parsing and decimal ASCII output
+  and expects `lib/u64-core.kasm` to be included too.
 
 ## Architecture
 

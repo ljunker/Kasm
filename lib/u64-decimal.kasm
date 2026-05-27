@@ -1,0 +1,181 @@
+; Decimal input and output helpers for unsigned 64-bit values.
+; Requires lib/u64-core.kasm to be included in the same program.
+
+u64_decimal_work:
+  .num64 0
+u64_decimal_quotient:
+  .num64 0
+u64_decimal_digits:
+  .byte 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+u64_decimal_digit_count:
+  .byte 0
+u64_decimal_temp:
+  .num64 0
+u64_decimal_digit64:
+  .num64 0
+u64_decimal_digit_byte:
+  .byte 0
+
+; u64_parse_decimal(text, destination)
+; Reads ASCII digits until NUL or newline and writes the parsed value.
+u64_parse_decimal:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSHA A1
+  CALL u64_clear
+  DROP 2
+  PEEKA A0, 2
+  PEEKA A1, 4
+
+u64_parse_decimal_loop:
+  LOAD R0, [A0]
+  JZ R0, u64_parse_decimal_done
+  MOV R1, 10
+  CMP R0, R1
+  JE u64_parse_decimal_done
+  SUBI R0, 48
+  STORE [u64_decimal_digit_byte], R0
+
+  PUSHA A1
+  PUSHA A0
+
+  PUSHA u64_decimal_temp
+  CALL u64_clear
+  DROP 2
+
+  MOV R3, 10
+u64_parse_decimal_mul10_loop:
+  PEEKA A1, 2
+  PUSHA A1
+  PUSHA u64_decimal_temp
+  CALL u64_add
+  DROP 4
+  DEC R3
+  JNZ R3, u64_parse_decimal_mul10_loop
+
+  PEEKA A1, 2
+  PUSHA A1
+  PUSHA u64_decimal_temp
+  CALL u64_copy
+  DROP 4
+
+  PUSHA u64_decimal_digit64
+  CALL u64_clear
+  DROP 2
+  LOAD R0, [u64_decimal_digit_byte]
+  STORE [u64_decimal_digit64], R0
+
+  PEEKA A1, 2
+  PUSHA u64_decimal_digit64
+  PUSHA A1
+  CALL u64_add
+  DROP 4
+
+  PEEKA A0, 0
+  PEEKA A1, 2
+  DROP 4
+  INCA A0
+  JMP u64_parse_decimal_loop
+
+u64_parse_decimal_done:
+  RET
+
+; u64_print_decimal(value): emits decimal ASCII with PRINTC, without newline
+u64_print_decimal:
+  PEEKA A0, 2
+  PUSHA u64_decimal_work
+  PUSHA A0
+  CALL u64_copy
+  DROP 4
+
+  CLR R0
+  STORE [u64_decimal_digit_count], R0
+
+u64_print_decimal_convert_loop:
+  PUSHA u64_decimal_work
+  CALL u64_is_zero
+  DROP 2
+  JNZ R0, u64_print_decimal_convert_done
+
+  PUSHA u64_decimal_quotient
+  CALL u64_clear
+  DROP 2
+
+  PUSHA u64_decimal_quotient
+  PUSHA u64_decimal_work
+  CALL u64_divmod10
+  DROP 4
+  ADDI R0, 48
+
+  LOAD R1, [u64_decimal_digit_count]
+  STORE [u64_decimal_digits + R1], R0
+  INC R1
+  STORE [u64_decimal_digit_count], R1
+
+  PUSHA u64_decimal_work
+  PUSHA u64_decimal_quotient
+  CALL u64_copy
+  DROP 4
+  JMP u64_print_decimal_convert_loop
+
+u64_print_decimal_convert_done:
+  LOAD R1, [u64_decimal_digit_count]
+  JNZ R1, u64_print_decimal_digits
+  MOV R0, 48
+  PRINTC R0
+  RET
+
+u64_print_decimal_digits:
+  DEC R1
+  LOAD R0, [u64_decimal_digits + R1]
+  PRINTC R0
+  JNZ R1, u64_print_decimal_digits
+  RET
+
+u64_divmod10:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  MOV R2, 7
+u64_divmod10_seek_end:
+  INCA A0
+  INCA A1
+  DEC R2
+  JNZ R2, u64_divmod10_seek_end
+
+  CLR R3
+  MOV R2, 8
+u64_divmod10_loop:
+  LOAD R0, [A0]
+  PUSH R2
+  CALL u64_div16_by_10
+  POP R2
+  STORE [A1], R1
+  DEC R2
+  JZ R2, u64_divmod10_done
+  DECA A0
+  DECA A1
+  JNZ R2, u64_divmod10_loop
+
+u64_divmod10_done:
+  MOV R0, R3
+  RET
+
+u64_div16_by_10:
+  CLR R1
+u64_div16_by_10_loop:
+  SUBI R0, 10
+  MOV R2, 0
+  SBC R3, R2
+  MOV R2, 0
+  SBC R2, R2
+  JNZ R2, u64_div16_by_10_undo
+  INC R1
+  JMP u64_div16_by_10_loop
+
+u64_div16_by_10_undo:
+  MOV R2, 10
+  ADD R0, R2
+  MOV R2, 0
+  ADC R3, R2
+  MOV R3, R0
+  RET

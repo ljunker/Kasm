@@ -151,13 +151,33 @@ print:
   RET
 ```
 
-`.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, and `.incbin` provide a
-small data layout language. Byte operands and direct memory addresses accept
-expressions such as `copy - source` and `[source + 1]`. Direct memory addresses,
-jump targets, and `.org` use 16-bit addresses, so data can live above address
-`255`. `.num64 655361234` reserves eight data-memory cells and stores the value
-as little-endian bytes. `.incbin "path"` embeds raw file bytes at assembly time;
-relative paths are resolved from the source file's directory in the CLI.
+`.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, `.incbin`, and
+`.include` provide a small assembly-time language. Byte operands and direct
+memory addresses accept expressions such as `copy - source` and `[source + 1]`.
+Direct memory addresses, jump targets, and `.org` use 16-bit addresses, so data
+can live above address `255`. `.num64 655361234` reserves eight data-memory
+cells and stores the value as little-endian bytes. `.incbin "path"` embeds raw
+file bytes at assembly time; relative paths are resolved from the source file's
+directory in the CLI.
+
+`.include "path"` expands another KASM source file at that point. Included
+labels and constants share the same global namespace as the including file.
+Included instructions are real bytecode, so library includes normally go after
+the program's `HALT`:
+
+```kasm
+  PUSHA value
+  CALL u64_print_decimal
+  DROP 2
+  HALT
+
+  .include "../lib/u64-core.kasm"
+  .include "../lib/u64-decimal.kasm"
+```
+
+The `lib/` directory contains reusable unsigned 64-bit helpers for `.num64`
+storage: core copy/clear/add/sub routines, simple multiplication and division,
+decimal parsing, and decimal printing.
 
 `LOAD` and `STORE` also accept one-register indexed forms such as `[R2]`,
 `[name + R2]`, and `[R2 + 4]`, plus address-register pointer forms such as
@@ -333,9 +353,12 @@ location for it.
 | `examples/wide-incdec64.kasm`  | 64-bit increment and decrement               | bytes before and after borrow |
 | `examples/wide-mul8x64.kasm`   | 64-bit repeated addition with `ADC`          | bytes of `1500`        |
 | `examples/num64-arithmetic.kasm` | `.num64`, stack arguments, 64-bit add/sub/mul/div/mod | bytes of each result |
-| `examples/num64-parse-decimal-file.kasm` | `.incbin` text input parsed into `.num64` | bytes of `655361234` |
+| `examples/num64-parse-decimal-file.kasm` | `.incbin` text input parsed into `.num64` | bytes of `65535` |
+| `examples/num64-print-decimal.kasm` | binary `.num64` converted to decimal ASCII with `PRINTC` | `655361234` |
+| `examples/num64-parse-print-decimal.kasm` | `.incbin` decimal input printed back as decimal text | `65535` |
 | `examples/num64-varargs.kasm` | variable argument count via `PUSHI`, `PUSHA`, `PEEK`, `PEEKA` | bytes of `342` |
 | `examples/aoc-2025-day1-sample.kasm` | parsing ASCII data with `CALL`/`RET`  | `3`                    |
+| `examples/aoc-2025-day1-part2.kasm` | AoC Day 1 part 2 with `.include` U64 helpers | `6` |
 | `examples/stack-calls.kasm`    | nested calls and saved registers             | `18`                   |
 
 Run any example by passing its source path to the CLI:
@@ -351,5 +374,6 @@ kasm run examples/memory-swap.kasm
 | `src/main/kotlin/de/ljunker/kasm` | Assembler, VM, debugger, opcode model, and CLI entrypoint. |
 | `src/test/kotlin/de/ljunker/kasm` | Unit tests, debugger tests, and example golden tests.      |
 | `examples`                        | KASM source programs.                                      |
+| `lib`                             | Reusable KASM library routines included with `.include`.   |
 | `docs/language-reference.md`      | Current language and VM reference.                         |
 | `kasm-textmate`                   | TextMate grammar for `.kasm` files.                        |

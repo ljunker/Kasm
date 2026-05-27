@@ -1,0 +1,100 @@
+; Unsigned 64-bit multiplication and division helpers.
+; Requires lib/u64-core.kasm to be included in the same program.
+
+u64_one:
+  .num64 1
+u64_mul_counter:
+  .num64 0
+u64_divmod_temp:
+  .num64 0
+
+; u64_mul(left, right, result): result = left * right
+; Uses repeated addition and is intended for small demonstration values.
+u64_mul:
+  PEEKA A0, 6
+  PUSHA A0
+  CALL u64_clear
+  DROP 2
+
+  PEEKA A0, 4
+  PUSHA u64_mul_counter
+  PUSHA A0
+  CALL u64_copy
+  DROP 4
+
+u64_mul_loop:
+  PUSHA u64_mul_counter
+  CALL u64_is_zero
+  DROP 2
+  JNZ R0, u64_mul_done
+
+  PEEKA A0, 2
+  PEEKA A1, 6
+  PUSHA A0
+  PUSHA A1
+  CALL u64_add
+  DROP 4
+
+  PUSHA u64_one
+  PUSHA u64_mul_counter
+  CALL u64_sub
+  DROP 4
+  JMP u64_mul_loop
+
+u64_mul_done:
+  RET
+
+; u64_divmod(dividend, divisor, quotient, remainder)
+; Computes quotient = dividend / divisor and remainder = dividend % divisor.
+; Division by zero leaves quotient at zero and remainder equal to dividend.
+u64_divmod:
+  PEEKA A0, 6
+  PUSHA A0
+  CALL u64_clear
+  DROP 2
+
+  PEEKA A0, 2
+  PEEKA A1, 8
+  PUSHA A1
+  PUSHA A0
+  CALL u64_copy
+  DROP 4
+
+  PEEKA A0, 4
+  PUSHA A0
+  CALL u64_is_zero
+  DROP 2
+  JNZ R0, u64_divmod_done
+
+u64_divmod_loop:
+  PEEKA A0, 8
+  PUSHA u64_divmod_temp
+  PUSHA A0
+  CALL u64_copy
+  DROP 4
+
+  PEEKA A0, 4
+  PUSHA A0
+  PUSHA u64_divmod_temp
+  CALL u64_sub
+  DROP 4
+
+  MOV R3, 0
+  SBC R3, R3
+  JNZ R3, u64_divmod_done
+
+  PEEKA A0, 8
+  PUSHA A0
+  PUSHA u64_divmod_temp
+  CALL u64_copy
+  DROP 4
+
+  PEEKA A0, 6
+  PUSHA u64_one
+  PUSHA A0
+  CALL u64_add
+  DROP 4
+  JMP u64_divmod_loop
+
+u64_divmod_done:
+  RET

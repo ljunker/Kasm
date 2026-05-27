@@ -4,6 +4,7 @@ import java.io.IOException
 import java.math.BigInteger
 import java.nio.file.Path
 import kotlin.io.path.readBytes
+import kotlin.io.path.readText
 
 class Assembler(
     private val baseDirectory: Path = Path.of(".")
@@ -26,7 +27,18 @@ class Assembler(
         )
     }
 
-    private fun parseStatements(source: String): List<Statement> {
+    private fun parseStatements(source: String): List<Statement> =
+        parseStatements(
+            source = source,
+            context = SourceContext(directory = baseDirectory.normalize()),
+            includeStack = emptySet()
+        )
+
+    private fun parseStatements(
+        source: String,
+        context: SourceContext,
+        includeStack: Set<Path>
+    ): List<Statement> {
         val statements = mutableListOf<Statement>()
 
         source.lines().forEachIndexed { index, rawLine ->
@@ -48,7 +60,8 @@ class Assembler(
 
                     statements += Statement.Label(
                         name = labelName,
-                        lineNumber = lineNumber
+                        lineNumber = lineNumber,
+                        sourceDirectory = context.directory
                     )
 
                     line = rest
@@ -62,18 +75,31 @@ class Assembler(
                     lineNumber = lineNumber
                 )
 
+                if (name == ".INCLUDE") {
+                    statements += readIncludedStatements(
+                        arguments = arguments,
+                        lineNumber = lineNumber,
+                        context = context,
+                        includeStack = includeStack
+                    )
+                    line = ""
+                    continue
+                }
+
                 statements += if (name.startsWith(".")) {
                     Statement.Directive(
                         name = name,
                         arguments = arguments,
-                        lineNumber = lineNumber
+                        lineNumber = lineNumber,
+                        sourceDirectory = context.directory
                     )
                 } else {
                     Statement.Instruction(
                         mnemonic = name,
                         arguments = arguments,
                         lineNumber = lineNumber,
-                        original = rawLine
+                        original = rawLine,
+                        sourceDirectory = context.directory
                     )
                 }
 
@@ -82,6 +108,41 @@ class Assembler(
         }
 
         return statements
+    }
+
+    private fun readIncludedStatements(
+        arguments: List<String>,
+        lineNumber: Int,
+        context: SourceContext,
+        includeStack: Set<Path>
+    ): List<Statement> {
+        if (arguments.size != 1) {
+            throw AssemblyException(
+                "Line $lineNumber: .include expects 1 argument(s), got ${arguments.size}"
+            )
+        }
+
+        val sourcePath = parseStringLiteral(arguments[0], lineNumber)
+        val path = resolvePath(sourcePath, context.directory)
+        val stackPath = path.toAbsolutePath().normalize()
+
+        if (stackPath in includeStack) {
+            throw AssemblyException("Line $lineNumber: recursive include '$sourcePath'")
+        }
+
+        val includedSource = try {
+            path.readText()
+        } catch (error: IOException) {
+            throw AssemblyException(
+                "Line $lineNumber: could not read include file '$sourcePath': ${error.message}"
+            )
+        }
+
+        return parseStatements(
+            source = includedSource,
+            context = SourceContext(directory = path.parent ?: context.directory),
+            includeStack = includeStack + stackPath
+        )
     }
 
     private fun stripComment(line: String): String {
@@ -1150,7 +1211,7 @@ class Assembler(
 
     private fun readIncbinBytes(statement: Statement.Directive): List<Int> {
         val sourcePath = parseStringLiteral(statement.arguments[0], statement.lineNumber)
-        val path = resolveDataPath(sourcePath)
+        val path = resolvePath(sourcePath, statement.sourceDirectory)
 
         return try {
             path.readBytes().map { byte -> byte.toInt() and Architecture.WORD_MASK }
@@ -1161,13 +1222,13 @@ class Assembler(
         }
     }
 
-    private fun resolveDataPath(sourcePath: String): Path {
+    private fun resolvePath(sourcePath: String, sourceDirectory: Path): Path {
         val path = Path.of(sourcePath)
 
         return if (path.isAbsolute) {
             path.normalize()
         } else {
-            baseDirectory.resolve(path).normalize()
+            sourceDirectory.resolve(path).normalize()
         }
     }
 
@@ -1331,25 +1392,33 @@ class Assembler(
 
     private sealed interface Statement {
         val lineNumber: Int
+        val sourceDirectory: Path
 
         data class Label(
             val name: String,
-            override val lineNumber: Int
+            override val lineNumber: Int,
+            override val sourceDirectory: Path
         ) : Statement
 
         data class Instruction(
             val mnemonic: String,
             val arguments: List<String>,
             override val lineNumber: Int,
-            val original: String
+            val original: String,
+            override val sourceDirectory: Path
         ) : Statement
 
         data class Directive(
             val name: String,
             val arguments: List<String>,
-            override val lineNumber: Int
+            override val lineNumber: Int,
+            override val sourceDirectory: Path
         ) : Statement
     }
+
+    private data class SourceContext(
+        val directory: Path
+    )
 
     private enum class DirectiveKind {
         EQU,

@@ -1,0 +1,16 @@
+; Convert a binary .num64 value to decimal ASCII and print it with PRINTC.
+; 655361234 is stored as 8 little-endian bytes, not as text.
+; Output: 655361234
+  .org 0x1900
+value:
+  .num64 655361234
+
+  PUSHA value
+  CALL u64_print_decimal
+  DROP 2
+  MOV R0, 10
+  PRINTC R0
+  HALT
+
+  .include "../lib/u64-core.kasm"
+  .include "../lib/u64-decimal.kasm"

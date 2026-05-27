@@ -1,0 +1,132 @@
+; Unsigned 64-bit core routines for values stored as eight little-endian bytes.
+; Include library files after the program's HALT, or jump over them.
+; Callers push parameters right-to-left, CALL the routine, then DROP the
+; parameter bytes.
+
+; u64_clear(value)
+u64_clear:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 8
+  CLR R0
+u64_clear_loop:
+  STORE [A0], R0
+  INCA A0
+  DEC R2
+  JNZ R2, u64_clear_loop
+  POP R2
+  RET
+
+; u64_copy(source, destination)
+u64_copy:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  MOV R2, 8
+u64_copy_loop:
+  LOAD R0, [A0]
+  STORE [A1], R0
+  INCA A0
+  INCA A1
+  DEC R2
+  JNZ R2, u64_copy_loop
+  POP R2
+  RET
+
+; u64_is_zero(value) -> R0 = 1 when zero, otherwise R0 = 0
+u64_is_zero:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 8
+u64_is_zero_loop:
+  LOAD R0, [A0]
+  JNZ R0, u64_is_zero_no
+  INCA A0
+  DEC R2
+  JNZ R2, u64_is_zero_loop
+  MOV R0, 1
+  POP R2
+  RET
+u64_is_zero_no:
+  CLR R0
+  POP R2
+  RET
+
+; u64_add(target, source): target = target + source
+u64_add:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  PUSH R3
+  MOV R2, 8
+  CLR R3
+u64_add_loop:
+  LOAD R0, [A0]
+  LOAD R1, [A1]
+  JZ R3, u64_add_low_byte
+  ADC R0, R1
+  JMP u64_add_store
+u64_add_low_byte:
+  ADD R0, R1
+  MOV R3, 1
+u64_add_store:
+  STORE [A0], R0
+  INCA A0
+  INCA A1
+  PUSHF
+  DEC R2
+  POPF
+  JNZ R2, u64_add_loop
+  POP R3
+  POP R2
+  RET
+
+; u64_sub(target, source): target = target - source
+u64_sub:
+  PEEKA A0, 2
+  PEEKA A1, 4
+  PUSH R2
+  PUSH R3
+  MOV R2, 8
+  CLR R3
+u64_sub_loop:
+  LOAD R0, [A0]
+  LOAD R1, [A1]
+  JZ R3, u64_sub_low_byte
+  SBC R0, R1
+  JMP u64_sub_store
+u64_sub_low_byte:
+  SUB R0, R1
+  MOV R3, 1
+u64_sub_store:
+  STORE [A0], R0
+  INCA A0
+  INCA A1
+  PUSHF
+  DEC R2
+  POPF
+  JNZ R2, u64_sub_loop
+  POP R3
+  POP R2
+  RET
+
+; u64_print_bytes(value): PRINT high byte through low byte as decimal lines
+u64_print_bytes:
+  PEEKA A0, 2
+  PUSH R2
+  MOV R2, 7
+u64_print_bytes_seek_end:
+  INCA A0
+  DEC R2
+  JNZ R2, u64_print_bytes_seek_end
+  MOV R2, 8
+u64_print_bytes_loop:
+  LOAD R0, [A0]
+  PRINT R0
+  DEC R2
+  JZ R2, u64_print_bytes_done
+  DECA A0
+  JNZ R2, u64_print_bytes_loop
+u64_print_bytes_done:
+  POP R2
+  RET
