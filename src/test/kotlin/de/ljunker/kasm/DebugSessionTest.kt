@@ -1,5 +1,6 @@
 package de.ljunker.kasm
 
+import java.math.BigInteger
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.writeText
@@ -68,6 +69,46 @@ class DebugSessionTest {
         val error = assertIs<DebugStop.VmError>(session.step())
 
         assertEquals("Stack underflow", error.error.message)
+    }
+
+    @Test
+    fun snapshotsExposeConstantsAndCurrentVariableValues() {
+        val session = DebugSession(
+            debugProgram = Assembler().assembleWithDebugInfo(
+                """
+                .equ START_VALUE, 15
+                counter:
+                  .num64 START_VALUE
+
+                  MOV R0, 16
+                  STORE [counter], R0
+                  HALT
+                """.trimIndent()
+            )
+        )
+
+        val initialSnapshot = session.snapshot()
+
+        assertEquals("START_VALUE", initialSnapshot.symbols.constants.single().name)
+        assertEquals(BigInteger.valueOf(15), initialSnapshot.symbols.constants.single().value)
+        assertEquals("counter", initialSnapshot.symbols.variables.single().variable.name)
+        assertEquals(BigInteger.valueOf(15), initialSnapshot.symbols.variables.single().numericValue)
+        assertEquals(
+            listOf(
+                "Constants: START_VALUE=15",
+                "Variables:",
+                "  counter@0x0000 .num64=15"
+            ),
+            initialSnapshot.symbolLines
+        )
+
+        session.step()
+        session.step()
+
+        val updatedSnapshot = session.snapshot()
+
+        assertEquals(BigInteger.valueOf(16), updatedSnapshot.symbols.variables.single().numericValue)
+        assertEquals("  counter@0x0000 .num64=16", updatedSnapshot.symbolLines.last())
     }
 
     @Test

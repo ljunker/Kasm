@@ -1,5 +1,6 @@
 ; Read decimal ASCII from a file into .num64 storage, then print it as decimal
 ; text again.
+  .equ NEWLINE, 10
   .org 0x1A00
 digits:
   .incbin "data/num64-decimal.txt"
@@ -16,7 +17,7 @@ parsed:
   PUSHA parsed
   CALL u64_print_decimal
   DROP 2
-  MOV R0, 10
+  MOV R0, NEWLINE
   PRINTC R0
   HALT
 

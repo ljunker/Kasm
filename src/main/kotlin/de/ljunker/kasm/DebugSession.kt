@@ -49,11 +49,15 @@ class DebugSession(
                 .thenBy(LineBreakpoint::lineNumber)
         )
 
-    fun snapshot(): DebugSnapshot =
-        DebugSnapshot(
-            vm = vm.snapshot(),
-            nextLocation = debugProgram.sourceMap.locationForAddress(vm.instructionPointer)
+    fun snapshot(): DebugSnapshot {
+        val vmSnapshot = vm.snapshot()
+
+        return DebugSnapshot(
+            vm = vmSnapshot,
+            nextLocation = debugProgram.sourceMap.locationForAddress(vm.instructionPointer),
+            symbols = debugProgram.symbols.snapshot(vmSnapshot.memory)
         )
+    }
 
     fun run(): DebugStop {
         if (!vm.isRunning) {
@@ -142,7 +146,9 @@ data class LineBreakpoint(
 
 data class DebugSnapshot(
     val vm: VmSnapshot,
-    val nextLocation: SourceLocation?
+    val nextLocation: SourceLocation?,
+    val symbols: DebugSymbolSnapshot = DebugSymbolSnapshot(),
+    val symbolLines: List<String> = symbols.formatLines()
 )
 
 sealed interface DebugStop {

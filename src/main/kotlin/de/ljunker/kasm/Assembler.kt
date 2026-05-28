@@ -29,8 +29,8 @@ class Assembler(
             context = context,
             includeStack = context.sourcePath?.let(::setOf).orEmpty()
         )
-        val symbols = collectSymbols(statements)
-        val encoding = encode(statements, symbols)
+        val collectedSymbols = collectSymbols(statements)
+        val encoding = encode(statements, collectedSymbols.symbols)
 
         return DebugProgram(
             program = Program(
@@ -40,7 +40,8 @@ class Assembler(
             sourceMap = SourceMap(
                 locationsByAddress = encoding.sourceLocations,
                 primarySourcePath = context.sourcePath
-            )
+            ),
+            symbols = collectedSymbols.debugSymbols
         )
     }
 
@@ -235,9 +236,10 @@ class Assembler(
         return arguments
     }
 
-    private fun collectSymbols(statements: List<Statement>): Symbols {
+    private fun collectSymbols(statements: List<Statement>): CollectedSymbols {
         val symbols = Symbols(collectConstantDefinitions(statements))
         val pendingLabels = mutableListOf<Statement.Label>()
+        val variables = mutableListOf<DebugVariable>()
         var codeAddress = 0
         var dataAddress = 0
 
@@ -276,11 +278,22 @@ class Assembler(
                         DirectiveKind.ASCII,
                         DirectiveKind.STRING,
                         DirectiveKind.INCBIN -> {
+                            val dataLabels = pendingLabels.toList()
                             defineLabels(pendingLabels, dataAddress, symbols)
 
                             val size = dataDirectiveSize(statement, kind)
 
                             ensureDataRange(statement, dataAddress, size)
+                            variables += dataLabels.map { label ->
+                                DebugVariable(
+                                    name = label.name,
+                                    address = dataAddress,
+                                    size = size,
+                                    kind = kind.toDebugVariableKind(),
+                                    lineNumber = label.lineNumber,
+                                    sourcePath = label.sourcePath
+                                )
+                            }
                             dataAddress += size
                         }
                     }
@@ -290,7 +303,13 @@ class Assembler(
 
         defineLabels(pendingLabels, codeAddress, symbols)
 
-        return symbols
+        return CollectedSymbols(
+            symbols = symbols,
+            debugSymbols = DebugSymbols(
+                constants = symbols.debugConstants(),
+                variables = variables
+            )
+        )
     }
 
     private fun collectConstantDefinitions(
@@ -320,12 +339,25 @@ class Assembler(
 
                 definitions[name] = ConstantDefinition(
                     expression = parseExpression(statement.arguments[1], statement.lineNumber),
-                    lineNumber = statement.lineNumber
+                    lineNumber = statement.lineNumber,
+                    sourcePath = statement.sourcePath
                 )
             }
 
         return definitions
     }
+
+    private fun DirectiveKind.toDebugVariableKind(): DebugVariableKind =
+        when (this) {
+            DirectiveKind.BYTE -> DebugVariableKind.BYTE
+            DirectiveKind.NUM64 -> DebugVariableKind.NUM64
+            DirectiveKind.ASCII -> DebugVariableKind.ASCII
+            DirectiveKind.STRING -> DebugVariableKind.STRING
+            DirectiveKind.INCBIN -> DebugVariableKind.INCBIN
+            DirectiveKind.EQU,
+            DirectiveKind.ORG ->
+                error("$this does not initialize data")
+        }
 
     private fun defineLabels(
         pendingLabels: MutableList<Statement.Label>,
@@ -1317,6 +1349,20 @@ class Assembler(
 
             return result
         }
+
+        fun debugConstants(): List<DebugConstant> =
+            constants.map { (name, constant) ->
+                DebugConstant(
+                    name = name,
+                    value = resolve(
+                        name = name,
+                        lineNumber = constant.lineNumber,
+                        resolvingConstants = mutableSetOf()
+                    ),
+                    lineNumber = constant.lineNumber,
+                    sourcePath = constant.sourcePath
+                )
+            }
     }
 
     private inner class ExpressionParser(
@@ -1482,7 +1528,8 @@ class Assembler(
 
     private data class ConstantDefinition(
         val expression: Expression,
-        val lineNumber: Int
+        val lineNumber: Int,
+        val sourcePath: Path?
     )
 
     private data class IndexedMemoryExpression(
@@ -1494,6 +1541,11 @@ class Assembler(
         val bytes: List<Int>,
         val sourceLocations: Map<Int, SourceLocation>,
         val initialMemory: Map<Int, Int>
+    )
+
+    private data class CollectedSymbols(
+        val symbols: Symbols,
+        val debugSymbols: DebugSymbols
     )
 
     companion object {

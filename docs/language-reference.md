@@ -26,9 +26,9 @@ loop:
 
 Labels use `name:` and may appear before an instruction or directive on the
 same line or on their own line. A label attached to an instruction resolves to
-that bytecode address. A label attached to `.byte`, `.ascii`, or `.string` data
-resolves to that data-memory address. Instruction, directive, and register
-names are case-insensitive.
+that bytecode address. A label attached to `.byte`, `.num64`, `.ascii`,
+`.string`, or `.incbin` data resolves to that data-memory address. Instruction,
+directive, and register names are case-insensitive.
 
 Numeric literals may be written in decimal, hexadecimal with `0x`, or binary
 with `0b`.
@@ -115,6 +115,15 @@ maps an executable instruction in a specific source file to its bytecode
 address. The older `addressForLine(line)` and `executableLines()` APIs remain
 available and refer to executable lines in the primary source file, or to the
 top-level string source when no primary file path exists.
+
+`DebugProgram.symbols` also exposes debugger-visible constants and data labels.
+Constants from `.equ` are stored with their evaluated decimal value. Labels
+attached to data directives are exposed as variables with address, size, and
+directive kind. `DebugSnapshot.symbols` reads the current VM memory for those
+variables on every snapshot; `.num64` variables are decoded from their eight
+little-endian bytes into an unsigned decimal 64-bit value. `DebugSnapshot`
+also carries `symbolLines`, a headless-friendly formatted view with the same
+newline-separated variable output as the CLI debugger.
 
 `.num64` accepts numeric expressions, not file paths. To use decimal digits
 from a text file, embed the file with `.incbin` and parse the ASCII digits in

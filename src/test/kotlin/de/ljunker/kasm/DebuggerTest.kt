@@ -46,4 +46,35 @@ class DebuggerTest {
         assertTrue("2" in output)
         assertTrue(output.any { it.startsWith("Registers: R0=1 ") })
     }
+
+    @Test
+    fun printsConstantsAndNum64Variables() {
+        val commands = ArrayDeque(listOf("quit"))
+        val output = mutableListOf<String>()
+        val debugProgram = Assembler().assembleWithDebugInfo(
+            """
+            .equ START_VALUE, 15
+            counter:
+              .num64 START_VALUE
+            flag:
+              .byte 1
+
+              HALT
+            """.trimIndent()
+        )
+
+        Debugger(
+            debugProgram = debugProgram,
+            sourceName = "counter.kasm",
+            readCommand = {
+                if (commands.isEmpty()) null else commands.removeFirst()
+            },
+            output = { line -> output += line }
+        ).run()
+
+        assertTrue("Constants: START_VALUE=15" in output)
+        assertTrue("Variables:" in output)
+        assertTrue("  counter@0x0000 .num64=15" in output)
+        assertTrue("  flag@0x0008 .byte=1" in output)
+    }
 }

@@ -296,14 +296,16 @@ Useful debugger commands:
 | `br 5`        | Set a breakpoint on executable source line 5.             |
 | `run`         | Start or continue until the next breakpoint or `HALT`.    |
 | `step`        | Execute the next source instruction.                      |
-| `state`       | Print registers, flags, stack, and non-zero memory cells. |
+| `state`       | Print registers, flags, symbols, stack, and non-zero memory cells. |
 | `breakpoints` | List active breakpoints.                                  |
 | `help`        | Print debugger commands.                                  |
 | `quit`        | Leave the debugger.                                       |
 
 When a breakpoint is hit, the debugger prints the next source instruction,
-instruction pointer, stack pointer, register values, flags, active stack cells,
-and non-zero memory cells outside the active stack.
+instruction pointer, stack pointer, register values, flags, constants,
+debugger-visible data variables, active stack cells, and non-zero memory cells
+outside the active stack. `.num64` variables are decoded from their current
+little-endian memory bytes and shown as unsigned decimal 64-bit values.
 
 ### Headless Debug Sessions
 
@@ -335,7 +337,10 @@ when (val stop = session.run()) {
 byte registers, address registers, complete memory, and running state.
 `DebugSnapshot.nextLocation`
 maps the next instruction back to its KASM source line when the source map has a
-location for it.
+location for it. `DebugSnapshot.symbols` exposes evaluated `.equ` constants and
+current values for labels attached to data directives. `DebugSnapshot.symbolLines`
+contains the same formatted constants and newline-separated variable lines that
+the CLI debugger prints.
 
 ## Examples
 

@@ -154,7 +154,8 @@ Die CLI kann Quellprogramme direkt ausfuehren und interaktiv debuggen:
 - `br 5` setzt im Debugger einen Breakpoint auf eine ausfuehrbare Quellzeile.
 - `run` startet oder setzt die Ausfuehrung bis zum naechsten Breakpoint fort.
 - `step` fuehrt die naechste Quellinstruktion aus.
-- `state` zeigt IP, Flags, Register, Stack und nichtleere Memory-Zellen.
+- `state` zeigt IP, Flags, Register, Konstanten, benannte Datenvariablen,
+  Stack und nichtleere Memory-Zellen.
 
 Der Assembler erzeugt dafuer eine Source-Map zwischen Bytecode-Adressen und
 Quellpositionen. `SourceLocation` enthaelt Zeile, Quelltext und optional den
@@ -165,6 +166,11 @@ Hauptdatei beziehungsweise den Top-Level-String zeigen. Breakpoints auf reinen
 Label-, Leer- oder Kommentarzeilen werden aktuell abgelehnt. `DebugSession`
 kapselt Run/Step, line- und dateibewusste Source-Breakpoints, typed
 Stop-Gruende und Snapshots headless; die CLI-REPL ist nur ein Adapter darueber.
+Snapshots enthalten ausserdem ausgewertete `.equ`-Konstanten und aktuelle Werte
+benannter Datenlabels. `.num64`-Variablen werden dabei aus den acht
+little-endian Speicherzellen als unsigned 64-bit Dezimalwert angezeigt.
+`DebugSnapshot.symbolLines` stellt dieselbe formatierte Symbolausgabe headless
+bereit, mit je einer Variablen pro Zeile.
 Damit kann ein IntelliJ-Plugin die Debugger-Steuerung benutzen, ohne
 Terminalausgabe oder Include-Pfade rekonstruieren zu muessen.
 

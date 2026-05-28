@@ -161,6 +161,7 @@ class Debugger(
                 .mapIndexed { register, value -> "A$register=${formatAddressValue(value)}" }
                 .joinToString(prefix = "Address registers: ", separator = " ")
         )
+        debugSnapshot.symbolLines.forEach(output)
         output(formatStack(snapshot))
         output(formatMemory(snapshot))
     }
@@ -213,7 +214,7 @@ class Debugger(
         output("br <line>     Set a breakpoint on an executable source line.")
         output("run           Start or continue until a breakpoint or HALT.")
         output("step          Execute one source instruction.")
-        output("state         Print registers, stack and non-zero memory cells.")
+        output("state         Print registers, symbols, stack and non-zero memory cells.")
         output("breakpoints   List current breakpoints.")
         output("quit          Leave the debugger.")
     }
