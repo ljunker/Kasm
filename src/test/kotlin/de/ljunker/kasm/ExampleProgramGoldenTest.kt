@@ -89,6 +89,11 @@ class ExampleProgramGoldenTest {
                 output = listOf("I", "N", "C", "B", "I", "N", "\n")
             ),
             Example(
+                fileName = "file-read-print.kasm",
+                hexDump = "3C 00 00 3A 0B 00 26 00 04 00 00 FF",
+                output = listOf("I", "N", "C", "B", "I", "N", "\n")
+            ),
+            Example(
                 fileName = "wide-add64.kasm",
                 hexDump = "10 00 00 15 10 01 08 15 02 00 01 11 10 15 00 " +
                         "10 00 01 15 10 01 09 15 2D 00 01 11 11 15 00 " +
@@ -204,7 +209,7 @@ class ExampleProgramGoldenTest {
             Example(
                 fileName = "aoc-2025-day1-part2.kasm",
                 hexDump = "",
-                output = listOf("6", "\n")
+                output = listOf("6", "8", "9", "2", "\n")
             ),
             Example(
                 fileName = "stack-calls.kasm",

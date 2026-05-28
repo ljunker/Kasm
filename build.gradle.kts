@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "de.ljunker"
-version = "0.7.0"
+version = "0.8.0"
 
 application {
     mainClass.set("de.ljunker.kasm.MainKt")

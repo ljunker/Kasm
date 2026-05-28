@@ -35,7 +35,8 @@ class Assembler(
         return DebugProgram(
             program = Program(
                 bytes = encoding.bytes,
-                initialMemory = encoding.initialMemory
+                initialMemory = encoding.initialMemory,
+                fileResources = collectedSymbols.fileResources
             ),
             sourceMap = SourceMap(
                 locationsByAddress = encoding.sourceLocations,
@@ -237,7 +238,9 @@ class Assembler(
     }
 
     private fun collectSymbols(statements: List<Statement>): CollectedSymbols {
-        val symbols = Symbols(collectConstantDefinitions(statements))
+        val constants = collectConstantDefinitions(statements)
+        val files = collectFileDefinitions(statements, constants)
+        val symbols = Symbols(constants, files)
         val pendingLabels = mutableListOf<Statement.Label>()
         val variables = mutableListOf<DebugVariable>()
         var codeAddress = 0
@@ -264,7 +267,8 @@ class Assembler(
                     ensureDirectiveArgumentCount(statement, kind)
 
                     when (kind) {
-                        DirectiveKind.EQU -> Unit
+                        DirectiveKind.EQU,
+                        DirectiveKind.FILE -> Unit
 
                         DirectiveKind.ORG ->
                             dataAddress = parseAddressExpression(
@@ -305,6 +309,13 @@ class Assembler(
 
         return CollectedSymbols(
             symbols = symbols,
+            fileResources = files.values.map { definition ->
+                ProgramFile(
+                    id = definition.id,
+                    name = definition.name,
+                    path = definition.path
+                )
+            },
             debugSymbols = DebugSymbols(
                 constants = symbols.debugConstants(),
                 variables = variables
@@ -347,6 +358,53 @@ class Assembler(
         return definitions
     }
 
+    private fun collectFileDefinitions(
+        statements: List<Statement>,
+        constants: Map<String, ConstantDefinition>
+    ): Map<String, FileDefinition> {
+        val definitions = linkedMapOf<String, FileDefinition>()
+
+        statements
+            .filterIsInstance<Statement.Directive>()
+            .filter { statement -> statement.name == ".FILE" }
+            .forEach { statement ->
+                ensureDirectiveArgumentCount(statement, DirectiveKind.FILE)
+
+                val name = statement.arguments[0]
+
+                if (!SYMBOL_REGEX.matches(name)) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: invalid symbol name '$name'"
+                    )
+                }
+
+                if (name in constants || name in definitions) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: duplicate symbol '$name'"
+                    )
+                }
+
+                if (definitions.size == Architecture.WORD_VALUE_COUNT) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: too many file sources; max " +
+                                "${Architecture.WORD_VALUE_COUNT}"
+                    )
+                }
+
+                val sourcePath = parseStringLiteral(statement.arguments[1], statement.lineNumber)
+
+                definitions[name] = FileDefinition(
+                    id = definitions.size,
+                    name = name,
+                    path = resolvePath(sourcePath, statement.sourceDirectory),
+                    lineNumber = statement.lineNumber,
+                    sourcePath = statement.sourcePath
+                )
+            }
+
+        return definitions
+    }
+
     private fun DirectiveKind.toDebugVariableKind(): DebugVariableKind =
         when (this) {
             DirectiveKind.BYTE -> DebugVariableKind.BYTE
@@ -355,7 +413,8 @@ class Assembler(
             DirectiveKind.STRING -> DebugVariableKind.STRING
             DirectiveKind.INCBIN -> DebugVariableKind.INCBIN
             DirectiveKind.EQU,
-            DirectiveKind.ORG ->
+            DirectiveKind.ORG,
+            DirectiveKind.FILE ->
                 error("$this does not initialize data")
         }
 
@@ -392,7 +451,8 @@ class Assembler(
                 readIncbinBytes(statement).size
 
             DirectiveKind.EQU,
-            DirectiveKind.ORG ->
+            DirectiveKind.ORG,
+            DirectiveKind.FILE ->
                 0
         }
 
@@ -449,7 +509,8 @@ class Assembler(
                     ensureDirectiveArgumentCount(statement, kind)
 
                     when (kind) {
-                        DirectiveKind.EQU -> Unit
+                        DirectiveKind.EQU,
+                        DirectiveKind.FILE -> Unit
 
                         DirectiveKind.ORG ->
                             dataAddress = parseAddressExpression(
@@ -568,6 +629,8 @@ class Assembler(
             Opcode.JL,
             Opcode.JGE,
             Opcode.JLE,
+            Opcode.JC,
+            Opcode.JNC,
             Opcode.JMP,
             Opcode.CALL -> {
                 encodeAddress(
@@ -660,6 +723,15 @@ class Assembler(
                 bytes += parseRegister(statement.arguments[0], statement.lineNumber)
             }
 
+            Opcode.FREAD -> {
+                bytes += parseRegister(statement.arguments[0], statement.lineNumber)
+                bytes += symbols.resolveFileSource(statement.arguments[1], statement.lineNumber)
+            }
+
+            Opcode.FREWIND -> {
+                bytes += symbols.resolveFileSource(statement.arguments[0], statement.lineNumber)
+            }
+
             Opcode.RET,
             Opcode.HALT,
             Opcode.PUSHF,
@@ -694,7 +766,8 @@ class Assembler(
                 readIncbinBytes(statement)
 
             DirectiveKind.EQU,
-            DirectiveKind.ORG ->
+            DirectiveKind.ORG,
+            DirectiveKind.FILE ->
                 emptyList()
         }
 
@@ -733,6 +806,7 @@ class Assembler(
             ".ASCII" -> DirectiveKind.ASCII
             ".STRING" -> DirectiveKind.STRING
             ".INCBIN" -> DirectiveKind.INCBIN
+            ".FILE" -> DirectiveKind.FILE
             else -> throw AssemblyException(
                 "Line ${statement.lineNumber}: unknown directive '${statement.name}'"
             )
@@ -777,6 +851,14 @@ class Assembler(
                     throw AssemblyException(
                         "Line ${statement.lineNumber}: ${statement.name.lowercase()} expects " +
                                 "1 argument(s), got $count"
+                    )
+                }
+            }
+
+            DirectiveKind.FILE -> {
+                if (count != 2) {
+                    throw AssemblyException(
+                        "Line ${statement.lineNumber}: .file expects 2 argument(s), got $count"
                     )
                 }
             }
@@ -1310,12 +1392,13 @@ class Assembler(
     }
 
     private inner class Symbols(
-        private val constants: Map<String, ConstantDefinition>
+        private val constants: Map<String, ConstantDefinition>,
+        private val files: Map<String, FileDefinition>
     ) {
         private val labels = mutableMapOf<String, Int>()
 
         fun defineLabel(name: String, address: Int, lineNumber: Int) {
-            if (name in labels || name in constants) {
+            if (name in labels || name in constants || name in files) {
                 throw AssemblyException("Line $lineNumber: duplicate symbol '$name'")
             }
 
@@ -1329,6 +1412,10 @@ class Assembler(
         ): BigInteger {
             labels[name]?.let { address ->
                 return BigInteger.valueOf(address.toLong())
+            }
+
+            if (name in files) {
+                throw AssemblyException("Line $lineNumber: file source '$name' cannot be used as a numeric symbol")
             }
 
             val constant = constants[name]
@@ -1348,6 +1435,20 @@ class Assembler(
             resolvingConstants.remove(name)
 
             return result
+        }
+
+        fun resolveFileSource(name: String, lineNumber: Int): Int {
+            val trimmedName = name.trim()
+
+            files[trimmedName]?.let { file ->
+                return file.id
+            }
+
+            if (trimmedName in labels || trimmedName in constants) {
+                throw AssemblyException("Line $lineNumber: symbol '$trimmedName' is not a file source")
+            }
+
+            throw AssemblyException("Line $lineNumber: unknown file source '$trimmedName'")
         }
 
         fun debugConstants(): List<DebugConstant> =
@@ -1523,11 +1624,20 @@ class Assembler(
         NUM64,
         ASCII,
         STRING,
-        INCBIN
+        INCBIN,
+        FILE
     }
 
     private data class ConstantDefinition(
         val expression: Expression,
+        val lineNumber: Int,
+        val sourcePath: Path?
+    )
+
+    private data class FileDefinition(
+        val id: Int,
+        val name: String,
+        val path: Path,
         val lineNumber: Int,
         val sourcePath: Path?
     )
@@ -1545,6 +1655,7 @@ class Assembler(
 
     private data class CollectedSymbols(
         val symbols: Symbols,
+        val fileResources: List<ProgramFile>,
         val debugSymbols: DebugSymbols
     )
 

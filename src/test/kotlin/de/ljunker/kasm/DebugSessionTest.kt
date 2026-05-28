@@ -3,6 +3,7 @@ package de.ljunker.kasm
 import java.math.BigInteger
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createTempDirectory
+import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -109,6 +110,28 @@ class DebugSessionTest {
 
         assertEquals(BigInteger.valueOf(16), updatedSnapshot.symbols.variables.single().numericValue)
         assertEquals("  counter@0x0000 .num64=16", updatedSnapshot.symbolLines.last())
+    }
+
+    @Test
+    fun snapshotsExposeFilePointerPositions() {
+        val baseDirectory = createTempDirectory("kasm-debug-file-pointer")
+        baseDirectory.resolve("input.bin").writeBytes(byteArrayOf(65, 66))
+        val session = DebugSession(
+            debugProgram = Assembler(baseDirectory = baseDirectory).assembleWithDebugInfo(
+                """
+                .file input, "input.bin"
+                  FREAD R0, input
+                  FREAD R0, input
+                  HALT
+                """.trimIndent()
+            )
+        )
+
+        assertEquals(listOf(0L), session.snapshot().vm.filePointers)
+
+        session.step()
+
+        assertEquals(listOf(1L), session.snapshot().vm.filePointers)
     }
 
     @Test

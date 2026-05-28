@@ -1,9 +1,15 @@
 package de.ljunker.kasm
 
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.channels.SeekableByteChannel
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
+
 class VirtualMachine(
     private val outputLine: (String) -> Unit,
     private val outputText: (String) -> Unit
-) {
+) : AutoCloseable {
     constructor() : this(::println, ::print)
 
     constructor(output: (String) -> Unit) : this(output, output)
@@ -13,6 +19,8 @@ class VirtualMachine(
     private val memory = IntArray(MEMORY_SIZE)
 
     private var program: Program? = null
+    private var fileChannels: Array<SeekableByteChannel?> = emptyArray()
+    private var filePointers = LongArray(0)
     private var ip: Int = 0
     private var running: Boolean = false
     private var zeroFlag: Boolean = false
@@ -28,12 +36,15 @@ class VirtualMachine(
         get() = running
 
     fun load(program: Program) {
+        closeFileChannels()
         this.program = program
         ip = 0
         running = true
         registers.fill(0)
         addressRegisters.fill(0)
         memory.fill(0)
+        fileChannels = arrayOfNulls(program.fileResources.size)
+        filePointers = LongArray(program.fileResources.size)
         program.initialMemory.forEach { (address, value) ->
             memory[address] = value
         }
@@ -42,6 +53,10 @@ class VirtualMachine(
         carryFlag = false
         overflowFlag = false
         stackPointer = MEMORY_SIZE
+    }
+
+    override fun close() {
+        closeFileChannels()
     }
 
     fun run(program: Program) {
@@ -164,6 +179,22 @@ class VirtualMachine(
                 val address = readAddress(program)
 
                 if (!zeroFlag) {
+                    jumpTo(program, address)
+                }
+            }
+
+            Opcode.JC -> {
+                val address = readAddress(program)
+
+                if (carryFlag) {
+                    jumpTo(program, address)
+                }
+            }
+
+            Opcode.JNC -> {
+                val address = readAddress(program)
+
+                if (!carryFlag) {
                     jumpTo(program, address)
                 }
             }
@@ -343,6 +374,19 @@ class VirtualMachine(
                 outputText(value.toChar().toString())
             }
 
+            Opcode.FREAD -> {
+                val register = readRegister(program)
+                val fileId = readFileSource(program)
+
+                readFileByte(fileId, register)
+            }
+
+            Opcode.FREWIND -> {
+                val fileId = readFileSource(program)
+
+                rewindFile(fileId)
+            }
+
             Opcode.MOVA -> {
                 val addressRegister = readAddressRegister(program)
                 val value = readAddress(program)
@@ -509,6 +553,7 @@ class VirtualMachine(
 
             Opcode.HALT -> {
                 running = false
+                closeFileChannels()
             }
         }
 
@@ -521,6 +566,7 @@ class VirtualMachine(
             registers = registers.toList(),
             addressRegisters = addressRegisters.toList(),
             memory = memory.toList(),
+            filePointers = filePointers.toList(),
             stackPointer = stackPointer,
             zeroFlag = zeroFlag,
             signFlag = signFlag,
@@ -562,6 +608,16 @@ class VirtualMachine(
         val high = readByte(program)
 
         return low or (high shl Architecture.WORD_BITS)
+    }
+
+    private fun readFileSource(program: Program): Int {
+        val fileId = readByte(program)
+
+        if (fileId !in program.fileResources.indices) {
+            throw VmException("Invalid file source $fileId")
+        }
+
+        return fileId
     }
 
     private fun readMemory(address: Int): Int {
@@ -710,6 +766,105 @@ class VirtualMachine(
         ip = address
     }
 
+    private fun readFileByte(fileId: Int, register: Int) {
+        val channel = channelForFile(fileId)
+        val buffer = ByteBuffer.allocate(1)
+        val bytesRead = try {
+            channel.read(buffer)
+        } catch (error: IOException) {
+            throw fileIoException("read", fileId, error)
+        }
+
+        filePointers[fileId] = filePosition(fileId, channel, "read")
+
+        if (bytesRead < 0) {
+            registers[register] = 0
+            zeroFlag = true
+            signFlag = false
+            carryFlag = true
+            overflowFlag = false
+            return
+        }
+
+        val value = buffer.array()[0].toInt() and Architecture.WORD_MASK
+
+        registers[register] = value
+        updateResultFlags(value)
+        carryFlag = false
+        overflowFlag = false
+    }
+
+    private fun rewindFile(fileId: Int) {
+        val channel = channelForFile(fileId)
+
+        try {
+            channel.position(0)
+        } catch (error: IOException) {
+            throw fileIoException("rewind", fileId, error)
+        }
+
+        filePointers[fileId] = 0
+    }
+
+    private fun channelForFile(fileId: Int): SeekableByteChannel {
+        fileChannels[fileId]?.let { channel ->
+            return channel
+        }
+
+        val resource = currentFileResource(fileId)
+        val channel = try {
+            Files.newByteChannel(resource.path, StandardOpenOption.READ)
+        } catch (error: IOException) {
+            throw fileIoException("open", fileId, error)
+        }
+
+        fileChannels[fileId] = channel
+        filePointers[fileId] = filePosition(fileId, channel, "open")
+
+        return channel
+    }
+
+    private fun currentFileResource(fileId: Int): ProgramFile {
+        val loadedProgram = program
+            ?: throw VmException("No program is loaded")
+
+        return loadedProgram.fileResources[fileId]
+    }
+
+    private fun filePosition(
+        fileId: Int,
+        channel: SeekableByteChannel,
+        operation: String
+    ): Long =
+        try {
+            channel.position()
+        } catch (error: IOException) {
+            throw fileIoException(operation, fileId, error)
+        }
+
+    private fun closeFileChannels() {
+        fileChannels.forEachIndexed { index, channel ->
+            if (channel != null) {
+                try {
+                    filePointers[index] = channel.position()
+                    channel.close()
+                } catch (_: IOException) {
+                    // Closing happens during load/HALT/close; preserve the VM's visible state.
+                }
+                fileChannels[index] = null
+            }
+        }
+    }
+
+    private fun fileIoException(operation: String, fileId: Int, error: IOException): VmException {
+        val resource = currentFileResource(fileId)
+        val message = error.message ?: error::class.simpleName ?: "I/O error"
+
+        return VmException(
+            "Could not $operation file source '${resource.name}' (${resource.path}): $message"
+        )
+    }
+
     private fun Int.toHex(): String =
         "%02X".format(this)
 
@@ -731,6 +886,7 @@ data class VmSnapshot(
     val registers: List<Int>,
     val addressRegisters: List<Int>,
     val memory: List<Int>,
+    val filePointers: List<Long> = emptyList(),
     val stackPointer: Int,
     val zeroFlag: Boolean,
     val signFlag: Boolean,

@@ -445,6 +445,127 @@ class AssemblerTest {
     }
 
     @Test
+    fun assemblesFileSourcesAndFileInstructions() {
+        val baseDirectory = createTempDirectory("kasm-file-source")
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .file input, "input.bin"
+
+              FREAD R0, input
+              JNC after_rewind
+              FREWIND input
+            after_rewind:
+              HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            Program(
+                bytes = listOf(
+                    Opcode.FREAD.code, 0, 0,
+                    Opcode.JNC.code, 8, 0,
+                    Opcode.FREWIND.code, 0,
+                    Opcode.HALT.code
+                ),
+                fileResources = listOf(
+                    ProgramFile(
+                        id = 0,
+                        name = "input",
+                        path = baseDirectory.resolve("input.bin").toAbsolutePath().normalize()
+                    )
+                )
+            ),
+            program
+        )
+    }
+
+    @Test
+    fun resolvesFileSourcesRelativeToIncludedFiles() {
+        val baseDirectory = createTempDirectory("kasm-include-file-source")
+        baseDirectory.resolve("lib").createDirectories()
+        baseDirectory.resolve("lib/input.kasm").writeText(
+            """
+            .file included_input, "blob.bin"
+            """.trimIndent()
+        )
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .include "lib/input.kasm"
+            FREAD R0, included_input
+            HALT
+            """.trimIndent()
+        )
+
+        assertEquals(
+            listOf(
+                ProgramFile(
+                    id = 0,
+                    name = "included_input",
+                    path = baseDirectory.resolve("lib/blob.bin").toAbsolutePath().normalize()
+                )
+            ),
+            program.fileResources
+        )
+        assertEquals(
+            Program.of(
+                Opcode.FREAD.code, 0, 0,
+                Opcode.HALT.code
+            ).bytes,
+            program.bytes
+        )
+    }
+
+    @Test
+    fun rejectsUnknownFileSources() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble("FREAD R0, input")
+        }
+
+        assertEquals("Line 1: unknown file source 'input'", exception.message)
+    }
+
+    @Test
+    fun rejectsNonFileSymbolsAsFileSources() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble(
+                """
+                input:
+                  .byte 0
+                  FREAD R0, input
+                """.trimIndent()
+            )
+        }
+
+        assertEquals("Line 3: symbol 'input' is not a file source", exception.message)
+    }
+
+    @Test
+    fun rejectsFileSourcesThatDuplicateOtherSymbols() {
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble(
+                """
+                .equ input, 1
+                .file input, "input.bin"
+                """.trimIndent()
+            )
+        }
+
+        assertEquals("Line 2: duplicate symbol 'input'", exception.message)
+    }
+
+    @Test
+    fun rejectsMoreThanTwoHundredFiftySixFileSources() {
+        val source = (0..256).joinToString(separator = "\n") { index ->
+            ".file input$index, \"input$index.bin\""
+        }
+        val exception = assertFailsWith<AssemblyException> {
+            Assembler().assemble(source)
+        }
+
+        assertEquals("Line 257: too many file sources; max 256", exception.message)
+    }
+
+    @Test
     fun includesSourcesRelativeToTheCurrentSourceDirectory() {
         val baseDirectory = createTempDirectory("kasm-include")
         baseDirectory.resolve("lib").createDirectories()

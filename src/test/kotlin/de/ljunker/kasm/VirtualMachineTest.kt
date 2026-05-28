@@ -1,8 +1,11 @@
 package de.ljunker.kasm
 
+import kotlin.io.path.createTempDirectory
+import kotlin.io.path.writeBytes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class VirtualMachineTest {
 
@@ -538,6 +541,116 @@ class VirtualMachineTest {
         VirtualMachine { line -> output += line }.run(program)
 
         assertEquals(listOf("7", "15", "8", "247"), output)
+    }
+
+    @Test
+    fun readsFileStreamsAndDistinguishesZeroBytesFromEof() {
+        val baseDirectory = createTempDirectory("kasm-file-read")
+        baseDirectory.resolve("input.bin").writeBytes(byteArrayOf(65, 0, 66))
+        val output = mutableListOf<String>()
+        val vm = VirtualMachine { line -> output += line }
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .file input, "input.bin"
+
+            next:
+              FREAD R0, input
+              JC done
+              PRINT R0
+              JNC next
+
+            done:
+              PRINT R0
+              HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(listOf("65", "0", "66", "0"), output)
+        assertEquals(listOf(3L), snapshot.filePointers)
+        assertEquals(true, snapshot.carryFlag)
+        assertEquals(true, snapshot.zeroFlag)
+    }
+
+    @Test
+    fun rewindsFileStreams() {
+        val baseDirectory = createTempDirectory("kasm-file-rewind")
+        baseDirectory.resolve("input.bin").writeBytes(byteArrayOf(7, 9))
+        val output = mutableListOf<String>()
+        val vm = VirtualMachine { line -> output += line }
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .file input, "input.bin"
+
+              FREAD R0, input
+              FREAD R0, input
+              FREWIND input
+              FREAD R0, input
+              PRINT R0
+              HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(listOf("7"), output)
+        assertEquals(listOf(1L), snapshot.filePointers)
+        assertEquals(false, snapshot.carryFlag)
+        assertEquals(false, snapshot.zeroFlag)
+    }
+
+    @Test
+    fun rewindDoesNotChangeFlags() {
+        val baseDirectory = createTempDirectory("kasm-file-rewind-flags")
+        baseDirectory.resolve("input.bin").writeBytes(byteArrayOf(7))
+        val vm = VirtualMachine()
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .file input, "input.bin"
+
+              FREAD R0, input
+              FREAD R0, input
+              FREWIND input
+              HALT
+            """.trimIndent()
+        )
+
+        vm.run(program)
+
+        val snapshot = vm.snapshot()
+
+        assertEquals(listOf(0L), snapshot.filePointers)
+        assertEquals(true, snapshot.carryFlag)
+        assertEquals(true, snapshot.zeroFlag)
+        assertEquals(false, snapshot.signFlag)
+        assertEquals(false, snapshot.overflowFlag)
+    }
+
+    @Test
+    fun reportsMissingFileSourcesAsVmErrors() {
+        val baseDirectory = createTempDirectory("kasm-missing-file")
+        val program = Assembler(baseDirectory = baseDirectory).assemble(
+            """
+            .file input, "missing.bin"
+              FREAD R0, input
+              HALT
+            """.trimIndent()
+        )
+        val exception = assertFailsWith<VmException> {
+            VirtualMachine().run(program)
+        }
+
+        assertTrue(
+            exception.message.orEmpty().startsWith(
+                "Could not open file source 'input' " +
+                        "(${baseDirectory.resolve("missing.bin").toAbsolutePath().normalize()}):"
+            )
+        )
     }
 
     @Test

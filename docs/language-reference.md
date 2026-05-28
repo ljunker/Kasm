@@ -28,7 +28,9 @@ Labels use `name:` and may appear before an instruction or directive on the
 same line or on their own line. A label attached to an instruction resolves to
 that bytecode address. A label attached to `.byte`, `.num64`, `.ascii`,
 `.string`, or `.incbin` data resolves to that data-memory address. Instruction,
-directive, and register names are case-insensitive.
+directive, and register names are case-insensitive. File source names declared
+with `.file` share the same global symbol namespace, but are only valid as
+`FREAD` and `FREWIND` operands.
 
 Numeric literals may be written in decimal, hexadecimal with `0x`, or binary
 with `0b`.
@@ -45,6 +47,7 @@ KASM currently uses these operand forms:
 | Address value    | `0x1234`, `buffer`, or `end - start`            | An address expression that resolves to `0..65535`. |
 | Jump target      | An address-value expression                     | A bytecode address that the VM may jump to.   |
 | Memory address   | `[40]`, `[buffer + R2]`, `[0x1200]`, or `[A0]`  | A direct, indexed, or pointer data-memory cell. |
+| File source      | `input`                                        | A file resource declared with `.file`.        |
 
 Byte values are checked against the 8-bit data range. Jump targets, direct
 memory addresses, `.org`, and the static base of indexed memory addresses are
@@ -84,6 +87,7 @@ before the first instruction executes:
 | `.ascii "text"`   | Initialize one cell per ASCII byte without a terminator.    |
 | `.string "text"`  | Initialize ASCII bytes followed by one zero byte.           |
 | `.incbin "path"`  | Initialize one cell per byte read from a binary file.       |
+| `.file NAME, "path"` | Declare a runtime-readable file stream without initializing memory. |
 | `.include "path"` | Expand another KASM source file at this point.              |
 
 `.org` affects only the data-memory layout cursor. It does not add bytecode or
@@ -97,6 +101,12 @@ without adding a terminator. Relative `.incbin` paths are resolved relative to
 the file containing the directive. When the assembler is used directly from
 Kotlin with a source string, top-level relative paths are resolved from the
 assembler's configured `baseDirectory`.
+
+`.file NAME, "path"` records an external file resource in the program image but
+does not read the file at assembly time and does not move the data-memory layout
+cursor. Relative `.file` paths use the same resolution rules as `.incbin`.
+`NAME` shares the global symbol namespace with labels and constants, but cannot
+be used in numeric expressions. Runtime file access uses `FREAD` and `FREWIND`.
 
 `.include` reads another KASM source file at assembly time and expands it at
 the directive position. Relative include paths are resolved relative to the file
@@ -123,11 +133,13 @@ directive kind. `DebugSnapshot.symbols` reads the current VM memory for those
 variables on every snapshot; `.num64` variables are decoded from their eight
 little-endian bytes into an unsigned decimal 64-bit value. `DebugSnapshot`
 also carries `symbolLines`, a headless-friendly formatted view with the same
-newline-separated variable output as the CLI debugger.
+newline-separated variable output as the CLI debugger. `VmSnapshot.filePointers`
+exposes the current offset of each `.file` resource by file resource id.
 
 `.num64` accepts numeric expressions, not file paths. To use decimal digits
-from a text file, embed the file with `.incbin` and parse the ASCII digits in
-the program into a `.num64` destination. The examples
+from a small text file, embed the file with `.incbin` and parse the ASCII digits
+in the program into a `.num64` destination. For larger inputs, use `.file` and
+`FREAD` to stream bytes into program-controlled parsing logic. The examples
 `examples/num64-parse-decimal-file.kasm` and
 `examples/num64-print-decimal.kasm` show decimal text input and output for
 `.num64` values.
@@ -152,6 +164,8 @@ KASM currently uses 8-bit data with 16-bit addresses:
   values in `0..65535`.
 - A program image must fit in the 65536-byte bytecode address space.
 - Data memory has 65536 8-bit cells.
+- File resources are external byte streams with VM-managed file pointers. File
+  pointers are not stored in data memory.
 - Registers and data-memory cells expose their stored unsigned byte values.
   `PRINT` therefore prints values in `0..255`.
 - `ADD`, `ADC`, `SUB`, `SBC`, `INC`, and `DEC` write wrapped 8-bit results.
@@ -195,6 +209,8 @@ operation. In that interpretation the same stored byte range represents
 | `JMP`       | `jump-target`              | Jump unconditionally.                                    |
 | `JZ`        | `register, jump-target`    | Jump when the register value is zero.                    |
 | `JNZ`       | `register, jump-target`    | Jump when the register value is non-zero.                |
+| `JC`        | `jump-target`              | Jump when the Carry flag is set.                         |
+| `JNC`       | `jump-target`              | Jump when the Carry flag is clear.                       |
 | `JE`        | `jump-target`              | Jump when the Zero flag is set.                          |
 | `JNE`       | `jump-target`              | Jump when the Zero flag is clear.                        |
 | `JG`        | `jump-target`              | Signed jump when the last comparison was greater.        |
@@ -203,6 +219,8 @@ operation. In that interpretation the same stored byte range represents
 | `JLE`       | `jump-target`              | Signed jump when the last comparison was less or equal.  |
 | `LOAD`      | `register, memory-address` | Load one data-memory cell into a register.               |
 | `STORE`     | `memory-address, register` | Store a register value into one data-memory cell.        |
+| `FREAD`     | `register, file-source`    | Read one byte from a runtime file stream into a register. |
+| `FREWIND`   | `file-source`              | Reset a runtime file stream to offset `0`.               |
 | `INCA`      | `address-register`         | Increment one address register with 16-bit wrapping.     |
 | `DECA`      | `address-register`         | Decrement one address register with 16-bit wrapping.     |
 | `PUSH`      | `register`                 | Push a register value on the stack.                      |
@@ -253,12 +271,16 @@ input was non-zero and sets Overflow when negating stored value `128`.
 
 `PUSHF` stores flags in one byte: bit `0` is Zero, bit `1` is Sign, bit `2` is
 Carry, and bit `3` is Overflow. `POPF` restores those four flags from the same
-layout. `MOVA`, `INCA`, `DECA`, `LOAD`, `STORE`, stack instructions, jumps,
+layout. `FREAD` updates Zero and Sign from the byte read, clears Carry and
+Overflow on a successful read, and sets Carry on EOF while returning `0`.
+`MOVA`, `INCA`, `DECA`, `LOAD`, `STORE`, `FREWIND`, stack instructions, jumps,
 calls, output instructions, `NOP`, and `HALT` do not update result flags.
 
 `JE` and `JNE` test the Zero flag. `JG`, `JGE`, `JL`, and `JLE` are signed
 comparisons based on Zero, Sign, and Overflow. `JZ` and `JNZ` are separate
-register-value tests and do not depend on the result flags.
+register-value tests and do not depend on the result flags. `JC` and `JNC`
+test the Carry flag and are useful after `FREAD` to distinguish EOF from a byte
+whose value is `0`.
 
 ## Memory
 
@@ -299,6 +321,32 @@ base, or one address register:
 Address forms with two runtime byte registers such as `[R1 + R2]` and mixed
 address-register plus byte-register forms such as `[A0 + R1]` are not
 implemented yet.
+
+## File Streams
+
+`.incbin` is best for small, reproducible assembly-time data. Larger inputs can
+be read at runtime with `.file` and `FREAD` without consuming data memory:
+
+```kasm
+.file input, "data/input.txt"
+
+loop:
+  FREAD R0, input
+  JC done
+  PRINTC R0
+  JMP loop
+
+done:
+  HALT
+```
+
+Each `.file` source has a VM-managed file pointer starting at offset `0`.
+`FREAD register, source` reads one byte and advances that pointer. On success,
+the target register receives the byte, Carry is cleared, Overflow is cleared,
+and Zero/Sign describe the byte value. On EOF, the target register receives `0`,
+Carry is set, Zero is set, Sign is cleared, and Overflow is cleared. This makes
+binary byte `0` distinguishable from EOF. `FREWIND source` sets the pointer back
+to offset `0` without changing flags.
 
 ## Stack and Calls
 

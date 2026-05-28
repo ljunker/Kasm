@@ -1,0 +1,11 @@
+; Stream bytes from a file at runtime and print them as ASCII.
+  .file message, "data/incbin-message.txt"
+
+loop:
+  FREAD R0, message
+  JC end
+  PRINTC R0
+  JMP loop
+
+end:
+  HALT

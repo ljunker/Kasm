@@ -1,17 +1,15 @@
-; Advent of Code 2025 Day 1, part 2 sample.
+; Advent of Code 2025 Day 1, part 2.
 ; Count every click that makes the dial point at 0, including intermediate
 ; positions during long rotations such as R1000.
-; Output for examples/data/aoc-2025-01-sample.txt: 6
+; Output for examples/data/aoc-2025-01-input.txt: 6892
   .equ NEWLINE, 10
   .equ LEFT, 76
   .equ DIAL_SIZE, 100
+  .equ ZERO, 48
+
+  .file input, "data/aoc-2025-01-input.txt"
 
   .org 0x2000
-input:
-  .incbin "data/aoc-2025-01-sample.txt"
-input_end:
-  .byte 0
-
 direction:
   .byte 0
 dial:
@@ -28,19 +26,17 @@ quotient:
   .num64 0
 remainder:
   .num64 0
+digit:
+  .num64 0
 zero_count:
   .num64 0
 
-  MOVA A0, input
-
 next_rotation:
-  LOAD R0, [A0]
-  JZ R0, done
+  FREAD R0, input
+  JC done
+  STORE [direction], R0
   CALL read_rotation
-  PUSHA A0
   CALL apply_rotation
-  PEEKA A0, 0
-  DROP 2
   JMP next_rotation
 
 done:
@@ -52,29 +48,48 @@ done:
   HALT
 
 read_rotation:
-  LOAD R0, [A0]
-  STORE [direction], R0
-  INCA A0
-
-  PUSHA A0
   PUSHA rotation
-  PUSHA A0
-  CALL u64_parse_decimal
-  DROP 4
-  PEEKA A0, 0
+  CALL u64_clear
   DROP 2
 
-skip_digits:
-  LOAD R0, [A0]
-  JZ R0, read_rotation_done
+  PUSHA digit
+  CALL u64_clear
+  DROP 2
+
+read_digits:
+  FREAD R0, input
+  JC read_rotation_done
   MOV R1, NEWLINE
   CMP R0, R1
-  JE skip_newline
-  INCA A0
-  JMP skip_digits
+  JE read_rotation_done
 
-skip_newline:
-  INCA A0
+  MOV R1, ZERO
+  SUB R0, R1
+  STORE [digit], R0
+
+  PUSHA work
+  CALL u64_clear
+  DROP 2
+
+  MOV R3, 10
+mul10_loop:
+  PUSHA rotation
+  PUSHA work
+  CALL u64_add
+  DROP 4
+  DEC R3
+  JNZ R3, mul10_loop
+
+  PUSHA rotation
+  PUSHA work
+  CALL u64_copy
+  DROP 4
+
+  PUSHA digit
+  PUSHA rotation
+  CALL u64_add
+  DROP 4
+  JMP read_digits
 
 read_rotation_done:
   RET

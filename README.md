@@ -72,10 +72,10 @@ Implemented instruction groups:
 
 | Area                  | Instructions                                      |
 |-----------------------|---------------------------------------------------|
-| Data movement         | `MOV`, `MOVA`, `LOAD`, `STORE`, `CLR`             |
+| Data movement         | `MOV`, `MOVA`, `LOAD`, `STORE`, `FREAD`, `FREWIND`, `CLR` |
 | Arithmetic            | `ADD`, `ADC`, `ADDI`, `SUB`, `SBC`, `SUBI`, `INC`, `DEC`, `MUL`, `DIV`, `MOD`, `NEG` |
 | Bit operations        | `AND`, `OR`, `XOR`, `NOT`                         |
-| Comparisons and flags | `CMP`, `JE`, `JNE`, `JG`, `JGE`, `JL`, `JLE`      |
+| Comparisons and flags | `CMP`, `JC`, `JNC`, `JE`, `JNE`, `JG`, `JGE`, `JL`, `JLE` |
 | Register-based jumps  | `JMP`, `JZ`, `JNZ`                                |
 | Stack and calls       | `PUSH`, `PUSHI`, `PUSHA`, `POP`, `DROP`, `PEEK`, `PEEKA`, `PUSHF`, `POPF`, `CALL`, `RET` |
 | Address arithmetic    | `INCA`, `DECA`                                    |
@@ -151,14 +151,16 @@ print:
   RET
 ```
 
-`.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, `.incbin`, and
+`.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, `.incbin`, `.file`, and
 `.include` provide a small assembly-time language. Byte operands and direct
 memory addresses accept expressions such as `copy - source` and `[source + 1]`.
 Direct memory addresses, jump targets, and `.org` use 16-bit addresses, so data
 can live above address `255`. `.num64 655361234` reserves eight data-memory
 cells and stores the value as little-endian bytes. `.incbin "path"` embeds raw
 file bytes at assembly time; relative paths are resolved from the source file's
-directory in the CLI.
+directory in the CLI. `.file input, "path"` declares a runtime-readable file
+stream without copying the file into data memory; `FREAD R0, input` reads one
+byte at a time and sets Carry on EOF.
 
 `.include "path"` expands another KASM source file at that point. Included
 labels and constants share the same global namespace as the including file.
@@ -303,9 +305,10 @@ Useful debugger commands:
 
 When a breakpoint is hit, the debugger prints the next source instruction,
 instruction pointer, stack pointer, register values, flags, constants,
-debugger-visible data variables, active stack cells, and non-zero memory cells
-outside the active stack. `.num64` variables are decoded from their current
-little-endian memory bytes and shown as unsigned decimal 64-bit values.
+debugger-visible data variables, file pointer positions, active stack cells,
+and non-zero memory cells outside the active stack. `.num64` variables are
+decoded from their current little-endian memory bytes and shown as unsigned
+decimal 64-bit values.
 
 ### Headless Debug Sessions
 
@@ -334,7 +337,8 @@ when (val stop = session.run()) {
 ```
 
 `DebugSnapshot.vm` exposes the instruction pointer, stack pointer, flags,
-byte registers, address registers, complete memory, and running state.
+byte registers, address registers, file pointer positions, complete memory, and
+running state.
 `DebugSnapshot.nextLocation`
 maps the next instruction back to its KASM source line when the source map has a
 location for it. `DebugSnapshot.symbols` exposes evaluated `.equ` constants and
@@ -353,6 +357,7 @@ the CLI debugger prints.
 | `examples/memory-strings.kasm` | `.string` and indexed string iteration       | `75`, `65`, `83`, `77` |
 | `examples/ascii-print.kasm`    | `A0`, high memory, and `PRINTC`              | `KASM`                 |
 | `examples/incbin-print.kasm`   | `.incbin` file data and `PRINTC`             | `INCBIN`               |
+| `examples/file-read-print.kasm` | `.file`, `FREAD`, `JC`, and `PRINTC`        | `INCBIN`               |
 | `examples/wide-add64.kasm`     | 64-bit addition with `ADC`                   | bytes of `0x0000000100000101` |
 | `examples/wide-sub64.kasm`     | 64-bit subtraction with `SBC`                | bytes of `0x00000001000000FF` |
 | `examples/wide-incdec64.kasm`  | 64-bit increment and decrement               | bytes before and after borrow |
@@ -363,7 +368,7 @@ the CLI debugger prints.
 | `examples/num64-parse-print-decimal.kasm` | `.incbin` decimal input printed back as decimal text | `65535` |
 | `examples/num64-varargs.kasm` | variable argument count via `PUSHI`, `PUSHA`, `PEEK`, `PEEKA` | bytes of `342` |
 | `examples/aoc-2025-day1-sample.kasm` | parsing ASCII data with `CALL`/`RET`  | `3`                    |
-| `examples/aoc-2025-day1-part2.kasm` | AoC Day 1 part 2 with `.include` U64 helpers | `6` |
+| `examples/aoc-2025-day1-part2.kasm` | AoC Day 1 part 2 with `FREAD` and U64 helpers | `6892` |
 | `examples/stack-calls.kasm`    | nested calls and saved registers             | `18`                   |
 
 Run any example by passing its source path to the CLI:

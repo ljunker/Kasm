@@ -14,7 +14,7 @@ Die Sprache kennt aktuell:
 - Dezimale, hexadezimale und binaere Zahlenliterale.
 - Konstanten, Datenlayout und kleine Ausdruecke:
   - `.equ`, `.org`, `.byte`, `.num64`, `.ascii`, `.string`, `.incbin`,
-    `.include`
+    `.file`, `.include`
   - `end - start`
   - `[buffer + 1]`
 - Vier allgemeine Register: `R0` bis `R3`.
@@ -50,6 +50,8 @@ Die Sprache kennt aktuell:
   - `JNZ`
 - Vergleiche und Flags:
   - `CMP R0, R1`
+  - `JC`
+  - `JNC`
   - `JE`
   - `JNE`
   - `JG`
@@ -61,6 +63,10 @@ Die Sprache kennt aktuell:
   - `STORE [40], R0`
   - `LOAD R0, [buffer]`
   - `LOAD R0, [A0]`
+- Laufzeit-Dateistreams:
+  - `.file input, "data/input.txt"`
+  - `FREAD R0, input`
+  - `FREWIND input`
 - Stack und Funktionsaufrufe:
   - `PUSH`
   - `PUSHI`
@@ -112,6 +118,12 @@ Der aktuelle VM-Stand trifft bereits ein paar Architekturentscheidungen:
   Teil des aktuellen Instruktionssatzes.
 - `JE` und `JNE` lesen das Zero-Flag; `JG`, `JGE`, `JL` und `JLE` sind signed
   Spruenge mit Sign- und Overflow-Semantik.
+- `JC` und `JNC` lesen das Carry-Flag und sind fuer EOF-Tests nach `FREAD`
+  nutzbar.
+- `.file` deklariert externe Laufzeit-Dateistreams; die VM verwaltet je Stream
+  einen Filepointer ausserhalb des Daten-Memory.
+- `FREAD` liest Byte fuer Byte, setzt Carry bei EOF und unterscheidet damit EOF
+  sauber von dem gelesenen Bytewert `0`.
 
 ### Beispiele
 
@@ -125,6 +137,8 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
 - `examples/memory-strings.kasm` zeigt `.string` und indizierte String-Iteration.
 - `examples/ascii-print.kasm` zeigt `A0`, high memory und `PRINTC`.
 - `examples/incbin-print.kasm` zeigt `.incbin` mit dateibasierten Rohbytes.
+- `examples/file-read-print.kasm` zeigt `.file`, `FREAD`, `JC` und `PRINTC`
+  fuer Laufzeit-Dateistreams ohne Daten-Memory-Kopie.
 - `examples/wide-add64.kasm`, `examples/wide-sub64.kasm`,
   `examples/wide-incdec64.kasm` und `examples/wide-mul8x64.kasm` zeigen
   64-bit-Arithmetik mit 8-bit-Registern, `ADC` und `SBC`.
@@ -141,7 +155,8 @@ Die Beispiele im Repo zeigen jetzt verschiedene Teile der Sprache:
 - `examples/aoc-2025-day1-sample.kasm` zeigt einen kleinen ASCII-Parser mit
   `CALL`/`RET` fuer Advent of Code 2025 Day 1.
 - `examples/aoc-2025-day1-part2.kasm` loest Advent of Code 2025 Day 1 Part 2
-  mit `.include`, `.num64`, Division durch 100 und Dezimal-Ausgabe.
+  mit `.file`, `FREAD`, `.include`, `.num64`, Division durch 100 und
+  Dezimal-Ausgabe.
 - `examples/stack-calls.kasm` zeigt verschachtelte `CALL`/`RET` und gesicherte Register.
 
 ### CLI und Debugger
@@ -290,8 +305,8 @@ dem aktuellen Kern bereits moeglich sind. Dieser Block ist umgesetzt:
 - `MUL`, `NEG`, `DIV`, `MOD`, Bit-Operationen und `CLR` haben dokumentierte
   Flag-Semantik.
 
-Unsigned Vergleichsspruenge auf Basis des Carry-Flags bleiben eine moegliche
-spaetere Ergaenzung, wenn Programme sie wirklich brauchen.
+Spezialisierte unsigned Vergleichsspruenge auf Basis des Carry-Flags bleiben
+eine moegliche spaetere Ergaenzung, wenn Programme sie wirklich brauchen.
 
 ### Abgeschlossen: Datei-I/O per `.incbin` nutzbar machen
 
@@ -307,6 +322,23 @@ bequem. Die reproduzierbare Assembler-Variante ist umgesetzt:
 - Bereichsfehler werden ueber die bestehende Datenrange-Pruefung abgefangen.
 - `examples/incbin-print.kasm` zeigt Datei-Daten plus Pointer-Iteration mit
   `A0` und `PRINTC`.
+
+### Abgeschlossen: Laufzeit-Dateistreams fuer grosse Eingaben
+
+`.incbin` bleibt fuer kleine reproduzierbare Daten sinnvoll, aber grosse
+Eingaben koennen jetzt ohne Daten-Memory-Kopie gelesen werden:
+
+- `.file name, "path"` deklariert einen externen Stream im Programmbild.
+- Relative `.file`-Pfade werden wie `.incbin` relativ zur enthaltenden
+  Quelldatei aufgeloest.
+- `FREAD R0, name` liest ein Byte und bewegt den VM-internen Filepointer.
+- Erfolg loescht Carry; EOF setzt Carry und liefert `0`, sodass binaere
+  Nullbytes eindeutig von EOF getrennt bleiben.
+- `FREWIND name` setzt den Filepointer auf Offset `0`, ohne Flags zu aendern.
+- `JC` und `JNC` machen Carry-basierte EOF- und Nicht-EOF-Spruenge direkt
+  ausdrueckbar.
+- Der Debugger zeigt Filepointer-Positionen in `state`.
+- `examples/file-read-print.kasm` demonstriert Stream-Ausgabe mit `PRINTC`.
 
 ### Abgeschlossen: `.include` und U64-Libraries
 
@@ -403,7 +435,7 @@ stabiler sind, lohnt sich reichhaltigeres Tooling.
 Diese Ideen sind interessant, sollten aber nach den Grundlagen kommen:
 
 - Makros.
-- Optionaler Laufzeit-Dateiloader:
+- Optionaler CLI-Dateiloader:
   - `kasm run program.kasm --load input.txt:0x2000`
   - dieselben Loader-Optionen fuer `kasm debug`
   - optional Nullterminator anhaengen fuer textbasierte Parser

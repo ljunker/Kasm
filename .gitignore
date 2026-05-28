@@ -19,3 +19,4 @@ out/
 
 ### Mac OS ###
 .DS_Store
+/examples/data/aoc*input.txt

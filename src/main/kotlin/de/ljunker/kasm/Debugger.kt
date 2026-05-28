@@ -161,9 +161,24 @@ class Debugger(
                 .mapIndexed { register, value -> "A$register=${formatAddressValue(value)}" }
                 .joinToString(prefix = "Address registers: ", separator = " ")
         )
+        formatFiles(snapshot)?.let(output)
         debugSnapshot.symbolLines.forEach(output)
         output(formatStack(snapshot))
         output(formatMemory(snapshot))
+    }
+
+    private fun formatFiles(snapshot: VmSnapshot): String? {
+        val files = debugProgram.program.fileResources
+
+        if (files.isEmpty()) {
+            return null
+        }
+
+        return files.joinToString(prefix = "Files: ", separator = " ") { file ->
+            val position = snapshot.filePointers.getOrElse(file.id) { 0 }
+
+            "${file.name}@$position"
+        }
     }
 
     private fun formatStack(snapshot: VmSnapshot): String {

@@ -62,6 +62,10 @@ enum class Opcode(
     DROP_REGISTER(0x37, "DROP", OperandType.REGISTER),
     PEEK_REGISTER_OFFSET(0x38, "PEEK", OperandType.REGISTER, OperandType.REGISTER),
     PEEKA_REGISTER_OFFSET(0x39, "PEEKA", OperandType.ADDRESS_REGISTER, OperandType.REGISTER),
+    JC(0x3A, "JC", OperandType.JUMP_TARGET),
+    JNC(0x3B, "JNC", OperandType.JUMP_TARGET),
+    FREAD(0x3C, "FREAD", OperandType.REGISTER, OperandType.FILE_SOURCE),
+    FREWIND(0x3D, "FREWIND", OperandType.FILE_SOURCE),
     HALT(0xFF, "HALT");
 
     val operandTypes: List<OperandType> = operandTypes.toList()
@@ -95,5 +99,6 @@ enum class OperandType(
     ADDRESS_VALUE(2),
     JUMP_TARGET(2),
     MEMORY_ADDRESS(2),
-    INDEXED_MEMORY_ADDRESS(3)
+    INDEXED_MEMORY_ADDRESS(3),
+    FILE_SOURCE(1)
 }

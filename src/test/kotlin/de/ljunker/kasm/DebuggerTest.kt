@@ -1,5 +1,7 @@
 package de.ljunker.kasm
 
+import kotlin.io.path.createTempDirectory
+import kotlin.io.path.writeBytes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -76,5 +78,32 @@ class DebuggerTest {
         assertTrue("Variables:" in output)
         assertTrue("  counter@0x0000 .num64=15" in output)
         assertTrue("  flag@0x0008 .byte=1" in output)
+    }
+
+    @Test
+    fun printsFilePointerPositions() {
+        val baseDirectory = createTempDirectory("kasm-debugger-file-pointer")
+        baseDirectory.resolve("input.bin").writeBytes(byteArrayOf(65))
+        val commands = ArrayDeque(listOf("step", "state", "quit"))
+        val output = mutableListOf<String>()
+        val debugProgram = Assembler(baseDirectory = baseDirectory).assembleWithDebugInfo(
+            """
+            .file input, "input.bin"
+              FREAD R0, input
+              HALT
+            """.trimIndent()
+        )
+
+        Debugger(
+            debugProgram = debugProgram,
+            sourceName = "file.kasm",
+            readCommand = {
+                if (commands.isEmpty()) null else commands.removeFirst()
+            },
+            output = { line -> output += line }
+        ).run()
+
+        assertTrue("Files: input@0" in output)
+        assertTrue("Files: input@1" in output)
     }
 }

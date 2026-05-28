@@ -65,7 +65,7 @@
       "patterns": [
         {
           "name": "keyword.instruction.kasm",
-          "match": "\\b(?i:MOV|MOVA|ADD|ADC|ADDI|SUB|SBC|SUBI|INC|DEC|MUL|DIV|MOD|NEG|AND|OR|XOR|NOT|CMP|JMP|JZ|JNZ|JE|JNE|JG|JGE|JL|JLE|LOAD|STORE|PUSH|PUSHI|PUSHA|POP|PUSHF|POPF|DROP|PEEK|PEEKA|CALL|RET|CLR|NOP|PRINT|PRINTC|INCA|DECA|HALT)\\b"
+          "match": "\\b(?i:MOV|MOVA|ADD|ADC|ADDI|SUB|SBC|SUBI|INC|DEC|MUL|DIV|MOD|NEG|AND|OR|XOR|NOT|CMP|JMP|JZ|JNZ|JC|JNC|JE|JNE|JG|JGE|JL|JLE|LOAD|STORE|FREAD|FREWIND|PUSH|PUSHI|PUSHA|POP|PUSHF|POPF|DROP|PEEK|PEEKA|CALL|RET|CLR|NOP|PRINT|PRINTC|INCA|DECA|HALT)\\b"
         }
       ]
     },
@@ -73,7 +73,7 @@
       "patterns": [
         {
           "name": "keyword.directive.kasm",
-          "match": "(?i:\\.EQU|\\.ORG|\\.BYTE|\\.NUM64|\\.ASCII|\\.STRING|\\.INCBIN|\\.INCLUDE)\\b"
+          "match": "(?i:\\.EQU|\\.ORG|\\.BYTE|\\.NUM64|\\.ASCII|\\.STRING|\\.INCBIN|\\.FILE|\\.INCLUDE)\\b"
         }
       ]
     },
